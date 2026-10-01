@@ -63,10 +63,10 @@ index 0000000..b11a77a
 +}
 diff --git a/src/ysport/src/riscos/ysriscoserror.cpp b/src/ysport/src/riscos/ysriscoserror.cpp
 new file mode 100644
-index 0000000..be5eb4d
+index 0000000..1728ae3
 --- /dev/null
 +++ b/src/ysport/src/riscos/ysriscoserror.cpp
-@@ -0,0 +1,38 @@
+@@ -0,0 +1,44 @@
 +/* RISC OS: report crashes with the RISC OS error and a backtrace.
 +
 +   UnixLib turns a processor exception (a data abort, say) into SIGEMT and a
@@ -78,6 +78,10 @@ index 0000000..be5eb4d
 +
 +   Same approach as riscos-openttd's patch 15. Part of the RISC OS port of
 +   YSFlight; same BSD-3 licence as the rest of ysport. */
++
++/* Built only for RISC OS; the Linux-ARM alignment test builds this
++   directory too (with RISCOS=1) and gets nothing from this file. */
++#ifdef __riscos__
 +
 +#include <signal.h>
 +#include <stdio.h>
@@ -105,6 +109,8 @@ index 0000000..be5eb4d
 +	signal(SIGEMT,YsRiscOsErrorReport);
 +	signal(SIGOSERROR,YsRiscOsErrorReport);
 +}
++
++#endif /* __riscos__ */
 diff --git a/src/ysport/src/riscos/ysriscosspecialpath.cpp b/src/ysport/src/riscos/ysriscosspecialpath.cpp
 new file mode 100644
 index 0000000..3b6dc6a

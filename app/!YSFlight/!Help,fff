@@ -9,22 +9,24 @@ and flying the AI traffic.
 Needs: SharedUnixLibrary 1.16 or later and ARMEABISupport (PackMan).
 PThreadTicker 0.03 is included and loaded by !Run.
 
-Double-click !YSFlight. A task window opens and runs:
-  1. the aircraft list        -> Logs.Aircraft (88 aircraft)
-  2. the map list             -> Logs.Fields   (18 maps)
-  3. Aomori start positions   -> Logs.Aomori   (36)
-  4. Hawaii start positions   -> Logs.Hawaii   (56)
-  5. the server, on the screen. It prints "Ready to go!" and then
-     messages about AI aircraft taxiing and landing. Leave it a few
-     minutes, then press Escape.
-Each step's error output goes to a Logs file ending in E (AircraftE,
-ServerE...). If the program crashes, that file has the RISC OS error
-and a backtrace.
+Double-click !YSFlight. A task window opens and runs, showing the
+output in the window (each list should take seconds):
+  1. the aircraft list        (NAIR:88; 176 is also fine)
+  2. the map list             (NFLD:18; 36 is also fine)
+  3. Aomori start positions   (NSTP:36)
+  4. Hawaii start positions   (NSTP:56)
+  5. the server. It prints "Thread 0 ready." to "Thread 3 ready."
+     (its 4 threads have started), then "Ready to go!", then messages about AI
+     aircraft taxiing and landing. Leave it a few minutes, then press
+     Escape.
+Each step's error output goes to a file in Logs (AircraftE ...
+ServerE). If the program crashes, that file has the RISC OS error and a
+backtrace.
 
 Settings are saved in <Choices$Write>.YSFlight.
 
-Please report: the files in Logs, the task window's text (Save from its
-menu), and any error box, with its exact text.
+Please report: the task window's text (Save from its menu), the files
+in Logs, and any error box, with its exact text.
 
 This is an unofficial port, not made or supported by the YSCE
 developers. AI (Anthropic's Claude) has been used as a coding assistant.

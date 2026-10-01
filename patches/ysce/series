@@ -4,4 +4,4 @@
 04-optional-server-list.patch
 05-riscos-paths.patch
 06-riscos-platform.patch
-07-riscos-error-report.patch
+07-main-entry.patch

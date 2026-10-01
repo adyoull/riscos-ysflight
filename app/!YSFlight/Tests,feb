@@ -1,20 +1,27 @@
 | YSFlight M1 tests. Started by !Run in a task window.
-| Each run's output (stdout) and its error output (stderr: messages, and
-| the crash report with the RISC OS error and a backtrace) go to files in
-| <YSFlight$Dir>.Logs. UnixLib does the > and 2> redirection; Do expands
-| the <variables> in the arguments, which Run alone doesn't.
+| Each run's output appears in this window (save it from the window's
+| menu). Its error output (stderr: messages, and the crash report with the
+| RISC OS error and a backtrace) goes to a file in <YSFlight$Dir>.Logs.
+| UnixLib does the 2> redirection; Do expands the <variables> in the
+| arguments, which Run alone doesn't. Time prints the clock between steps.
 WimpSlot -min 16384K
 CDir <YSFlight$Dir>.Logs
-Echo YSFlight M1 tests. Each step can take a while.
-Echo 1/4 Aircraft list...
-Do Run <YSFlight$Dir>.!RunImage -listairplane ><YSFlight$Dir>.Logs.Aircraft 2><YSFlight$Dir>.Logs.AircraftE
-Echo 2/4 Field list...
-Do Run <YSFlight$Dir>.!RunImage -listfield ><YSFlight$Dir>.Logs.Fields 2><YSFlight$Dir>.Logs.FieldsE
-Echo 3/4 Start positions on Aomori...
-Do Run <YSFlight$Dir>.!RunImage -liststartpos AOMORI ><YSFlight$Dir>.Logs.Aomori 2><YSFlight$Dir>.Logs.AomoriE
-Echo 4/4 Start positions on Hawaii...
-Do Run <YSFlight$Dir>.!RunImage -liststartpos HAWAII ><YSFlight$Dir>.Logs.Hawaii 2><YSFlight$Dir>.Logs.HawaiiE
-Echo Done. Now the server: it loads a map and flies AI traffic.
-Echo Leave it a few minutes, then press Escape to stop it.
+Echo YSFlight M1 tests. Each list should take seconds, not minutes.
+Time
+Echo 1/4 Aircraft list (88)...
+Do Run <YSFlight$Dir>.!RunImage -listairplane 2><YSFlight$Dir>.Logs.AircraftE
+Time
+Echo 2/4 Field list (18)...
+Do Run <YSFlight$Dir>.!RunImage -listfield 2><YSFlight$Dir>.Logs.FieldsE
+Time
+Echo 3/4 Start positions on Aomori (36)...
+Do Run <YSFlight$Dir>.!RunImage -liststartpos AOMORI 2><YSFlight$Dir>.Logs.AomoriE
+Time
+Echo 4/4 Start positions on Hawaii (56)...
+Do Run <YSFlight$Dir>.!RunImage -liststartpos HAWAII 2><YSFlight$Dir>.Logs.HawaiiE
+Time
+Echo Now the server: it loads a map and flies AI traffic, with 4 threads.
+Echo After "Ready to go!" leave it a few minutes, then press Escape.
 Do Run <YSFlight$Dir>.!RunImage -server pi 2><YSFlight$Dir>.Logs.ServerE
-Echo Finished. Please send the files in !YSFlight.Logs and this window's text.
+Time
+Echo Finished. Please save this window's text and send it with !YSFlight.Logs.

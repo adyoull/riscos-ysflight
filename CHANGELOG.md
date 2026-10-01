@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased: M1 test 3 (2026-10-01)
+
+- The console server exits after printing a list (-listairplane,
+  -listfield, -liststartpos) instead of waiting in its menu for a key. In
+  test 2 the list went to a file, so the menu couldn't be seen and the first
+  step looked hung (ysce patch 07, now "main-entry").
+- Tests shows each step's output in the task window, prints the time
+  between steps, and keeps stderr in Logs.
+
 ## Unreleased: M1 test 2 (2026-10-01)
 
 - Same layout as the other ports: patch series per upstream repo

@@ -14,7 +14,7 @@ riscos-mesa devkit 20.3.5-10.
 | ysce 04 optional-server-list | gui/CMakeLists.txt, gui/fsguinetdialog.cpp | no curl/nlohmann-json; `find_package(CURL)` without CONFIG | the CONFIG part |
 | ysce 05 riscos-paths | filename/fsfilename.cpp | user files in `<Choices$Write>.YSFlight` | |
 | ysce 06 riscos-platform | platform/riscos/ | platform library without X11/dlopen | |
-| ysce 07 riscos-error-report | main/fsmain.cpp, main_consvr/fsmainsvr.cpp | install the crash report | |
+| ysce 07 main-entry | main/fsmain.cpp, main_consvr/fsmainsvr.cpp | install the crash report; console lists exit instead of waiting in the menu | the list part |
 | ysce_public 01 unaligned-stl | ysclass/src/ysshellstl.cpp | unaligned float load in binary STL | yes |
 | ysce_public 02 thread-fixes | ysclass11/src/ysthreadpool.cpp, ysport/src/ysthread.cpp | missing `<cstdio>`; `RunParallel` joined one thread too many | yes |
 | ysce_public 03 riscos-cmake | fssimplewindow, yssimplesound, yssystemfont, ysgl CMakeLists | RISC OS back ends; no GLSL host tools when cross-compiling | |

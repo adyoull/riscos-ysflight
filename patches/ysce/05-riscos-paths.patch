@@ -1,0 +1,48 @@
+RISC OS: keep user files in <Choices$Write>.YSFlight.
+
+YsSpecialPath::GetUserDocDir is <Choices$Write>/YSFlight on RISC OS
+(ysce_public patch 04), so don't add YSFLIGHT.COM/YSFlight Community
+Edition below it: names with spaces and dots are awkward on RISC OS.
+
+For YSCE 231e711. See docs/PORTING-NOTES.md in riscos-ysflight.
+
+diff --git a/src/filename/fsfilename.cpp b/src/filename/fsfilename.cpp
+index 80987dc..f623ee1 100644
+--- a/src/filename/fsfilename.cpp
++++ b/src/filename/fsfilename.cpp
+@@ -73,7 +73,17 @@ const wchar_t *FsGetCommonYsflightDir(void)
+ 				}
+ 			}
+ 
++#ifdef __riscos__
++			// RISC OS: GetUserDocDir is already <Choices$Write>/YSFlight, and
++			// "YSFlight Community Edition" (with spaces) is not a good RISC OS name.
++			if(2==i)
++			{
++				ful=path;
++			}
++			else if(0==i)
++#else
+ 			if(0==i || 2==i)
++#endif
+ 			{
+ 				ful.MakeFullPathName(path,L"YSFLIGHT.COM");
+ 				YsFileIO::MkDir(path);
+@@ -115,6 +125,9 @@ const wchar_t *FsGetUserYsflightDir(void)
+ 		if(YSOK==YsSpecialPath::GetUserDocDir(path))
+ 		{
+ 			YsWString ful;
++#ifdef __riscos__
++			ful=path;  // <Choices$Write>/YSFlight; see FsGetCommonYsflightDir
++#else
+ 			ful.MakeFullPathName(path,L"YSFLIGHT.COM");
+ 			YsFileIO::MkDir(ful);
+ 			path=ful;
+@@ -122,6 +135,7 @@ const wchar_t *FsGetUserYsflightDir(void)
+ 			ful.MakeFullPathName(path,FsProgramName);
+ 			YsFileIO::MkDir(ful);
+ 			path=ful;
++#endif
+ 
+ 
+ 			YsWString cfg;

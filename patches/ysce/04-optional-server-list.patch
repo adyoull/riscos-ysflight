@@ -1,0 +1,103 @@
+Make the online server list optional (YS_NO_SERVER_LIST).
+
+The server-list button downloads https://ysflight.org/serverlist/ with curl
+on a detached std::thread and parses it with nlohmann-json. Neither library
+is in the RISC OS devkit, so with YS_NO_SERVER_LIST (always on RISC OS, or
+-DYS_NO_SERVER_LIST=ON) the download is compiled out and the button shows
+the existing "server list unavailable" dialog; the host is typed in.
+Also: find_package(CURL) without CONFIG, since distro curl packages have no
+CURLConfig.cmake (only vcpkg does).
+
+For YSCE 231e711. See docs/PORTING-NOTES.md in riscos-ysflight.
+
+diff --git a/src/gui/CMakeLists.txt b/src/gui/CMakeLists.txt
+index f37dac4..ee677cf 100644
+--- a/src/gui/CMakeLists.txt
++++ b/src/gui/CMakeLists.txt
+@@ -25,11 +25,19 @@ fsguimaincanvas.h
+ fsguisiminfodialog.h
+ )
+ 
+-find_package(CURL CONFIG REQUIRED)
+-find_package(nlohmann_json CONFIG REQUIRED)
+-
+ add_library(${TARGET_NAME} ${SRCS} ${HEADERS})
+ target_link_libraries(${TARGET_NAME} ${LIB_DEPENDENCY})
+-target_link_libraries(${TARGET_NAME} ${LIB_DEPENDENCY} CURL::libcurl)
+-target_link_libraries(${TARGET_NAME} ${LIB_DEPENDENCY} nlohmann_json::nlohmann_json)
++if(RISCOS)
++	set(YS_NO_SERVER_LIST ON)
++endif()
++if(YS_NO_SERVER_LIST)
++	# Without curl and nlohmann-json (RISC OS for now, or -DYS_NO_SERVER_LIST=ON)
++	# the server list download is compiled out and the host is typed in by hand.
++	target_compile_definitions(${TARGET_NAME} PRIVATE YS_NO_SERVER_LIST)
++else()
++	find_package(CURL REQUIRED)
++	find_package(nlohmann_json CONFIG REQUIRED)
++	target_link_libraries(${TARGET_NAME} ${LIB_DEPENDENCY} CURL::libcurl)
++	target_link_libraries(${TARGET_NAME} ${LIB_DEPENDENCY} nlohmann_json::nlohmann_json)
++endif()
+ target_include_directories(${TARGET_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+diff --git a/src/gui/fsguinetdialog.cpp b/src/gui/fsguinetdialog.cpp
+index 8cc6e5b..86b6301 100644
+--- a/src/gui/fsguinetdialog.cpp
++++ b/src/gui/fsguinetdialog.cpp
+@@ -26,9 +26,11 @@
+ 
+ #include "fsguinetdialog.h"
+ 
++#ifndef YS_NO_SERVER_LIST
+ #include <curl/curl.h>
+ 
+ #include <nlohmann/json.hpp>
++#endif
+ 
+ #include <string>
+ #include <iostream>
+@@ -225,6 +227,12 @@ void FsGuiStartClientDialog::OnButtonClick(FsGuiButton *btn)
+ 	}
+ 	if(btn==serverListBtn)
+ 	{
++#ifdef YS_NO_SERVER_LIST
++		// No server-list download in this build: say the list is unavailable.
++		auto dlg = FsGuiDialog::CreateSelfDestructiveDialog <FsGuiNetServerListOfflineDialog>();
++		dlg->Make();
++		AttachModalDialog(dlg);
++#else
+ 		std::string url = "https://ysflight.org/serverlist/?json=1";
+ 		auto callback = [this](std::string jsonData){
+ 			UpdateGUI(jsonData);
+@@ -232,6 +240,7 @@ void FsGuiStartClientDialog::OnButtonClick(FsGuiButton *btn)
+ 
+ 		std::thread threadObj(&FsGuiStartClientDialog::FetchJsonServerList, this, url, callback);
+ 		threadObj.detach();
++#endif
+ 	}
+ }
+ 
+@@ -273,6 +282,7 @@ void FsGuiStartClientDialog::OnDropListSelChange(FsGuiDropList *drp,int )
+ 	}
+ }
+ 
++#ifndef YS_NO_SERVER_LIST
+ size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp)
+ {
+ 	((std::string*)userp)->append((char*)contents, size * nmemb);
+@@ -364,6 +374,16 @@ void FsGuiStartClientDialog::UpdateGUI(const std::string& json)
+ 	}
+ }
+ 
++#else
++void FsGuiStartClientDialog::FetchJsonServerList(const std::string, std::function<void(std::string)>)
++{
++}
++
++void FsGuiStartClientDialog::UpdateGUI(const std::string&)
++{
++}
++#endif
++
+ void FsGuiStartClientDialog::OnServerListDialogClosed(FsGuiDialog *dlg, int returnCode){
+ 	auto serverListDlg = dynamic_cast<FsGuiNetServerListDialog*>(dlg);
+ 	if (serverListDlg != nullptr){

@@ -1,0 +1,5 @@
+01-unaligned-stl.patch
+02-thread-fixes.patch
+03-riscos-cmake.patch
+04-riscos-ysport.patch
+05-nownd-console.patch

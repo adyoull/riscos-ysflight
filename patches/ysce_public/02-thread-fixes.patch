@@ -1,0 +1,36 @@
+Two small thread fixes (not RISC OS specific).
+
+- ysthreadpool.cpp uses printf without #include <cstdio>.
+- YsThreadController::RunParallel (pthread version) starts nTask-1 threads
+  but joined nTask, the last one past the end of the handle array.
+Threads otherwise run as upstream: riscos-unixlib 5.0.3.1 switches threads
+through Wimp_Poll, and PThreadTicker 0.03 ships with the app. Upstream
+could take both fixes.
+
+For YSCE ysce_public 1b13297. See docs/PORTING-NOTES.md in riscos-ysflight.
+
+diff --git a/src/ysclass11/src/ysthreadpool.cpp b/src/ysclass11/src/ysthreadpool.cpp
+index 4f33a05..a3ace3d 100644
+--- a/src/ysclass11/src/ysthreadpool.cpp
++++ b/src/ysclass11/src/ysthreadpool.cpp
+@@ -28,6 +28,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ //////////////////////////////////////////////////////////// */
+ 
+ #include "ysthreadpool.h"
++#include <cstdio>
+ 
+ 
+ 
+diff --git a/src/ysport/src/ysthread.cpp b/src/ysport/src/ysthread.cpp
+index 8923e07..d992139 100644
+--- a/src/ysport/src/ysthread.cpp
++++ b/src/ysport/src/ysthread.cpp
+@@ -162,7 +162,7 @@ YSRESULT YsThreadController::RunParallel(int nTask,YsTask *const task[])
+ 			pthread_create(&hThread[i],NULL,YsPthreadLaunch,(void *)task[i]);
+ 		}
+ 		task[nTask-1]->StartLocal();
+-		for(int i=0; i<nTask; i++)
++		for(int i=0; i<nTask-1; i++)  // nTask-1 threads were started
+ 		{
+ 			pthread_join(hThread[i],NULL);
+ 		}

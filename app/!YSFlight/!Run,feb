@@ -1,0 +1,18 @@
+| !Run for !YSFlight (M1 test build: the console server, no window yet).
+| Lines starting with | are comments.
+Set YSFlight$Dir <Obey$Dir>
+
+| The program is an Absolute file with UnixLib inside it, but it needs
+| UnixLib's SharedUnixLibrary and ARMEABISupport (both from PackMan).
+RMEnsure SharedUnixLibrary 1.16 IfThere System:Modules.SharedULib Then RMLoad System:Modules.SharedULib
+RMEnsure SharedUnixLibrary 1.16 Error YSFlight needs SharedUnixLibrary 1.16 or later. Install it with PackMan.
+RMEnsure ARMEABISupport 0 IfThere System:Modules.ARMEABISupport Then RMLoad System:Modules.ARMEABISupport
+RMEnsure ARMEABISupport 0 Error YSFlight needs the ARMEABISupport module. Install it with PackMan.
+| UnixLib's thread timer module, for the simulator's threads. It must be
+| loaded before the program starts.
+RMEnsure PThreadTicker 0.01 IfThere System:Modules.PThrTicker Then RMLoad System:Modules.PThrTicker
+RMEnsure PThreadTicker 0.01 RMLoad <YSFlight$Dir>.PThrTicker
+
+| The task window's slot must hold the whole program (about 6 MB); the
+| heap goes in dynamic areas ("YSFlight Heap").
+TaskWindow "Obey <YSFlight$Dir>.Tests" -wimpslot 16384K -name "YSFlight M1 tests"

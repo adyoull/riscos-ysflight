@@ -1,0 +1,7 @@
+01-missing-includes.patch
+02-unaligned-network-floats.patch
+03-riscos-cmake.patch
+04-optional-server-list.patch
+05-riscos-paths.patch
+06-riscos-platform.patch
+07-riscos-error-report.patch

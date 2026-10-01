@@ -1,0 +1,83 @@
+CMake: RISC OS build (RISCOS=1, set by the toolchain file).
+
+- platform/riscos instead of platform/linux; no sound/voice plug-ins
+  (UnixLib has no dlopen), no main_demoOnly.
+- main: only ysflight32_gl1 for now; linked with ysflight_platform_riscos
+  and fssimplewindow, no plug-in copies.
+- ysjoystick: the null reader.
+
+For YSCE 231e711. See docs/PORTING-NOTES.md in riscos-ysflight.
+
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 0682aa3..55cd5b8 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -67,6 +67,9 @@ elseif(APPLE)
+ 	add_subdirectory(platform/macosx)
+ 	add_subdirectory(sounddll/macosx)
+ 	add_subdirectory(voicedll/generic)
++elseif(RISCOS)
++	# Sound and voice are linked in, not loaded as plug-ins (no dlopen).
++	add_subdirectory(platform/riscos)
+ elseif(UNIX)
+ 	add_subdirectory(platform/linux)
+ 	add_subdirectory(sounddll/linux-alsa)
+@@ -88,4 +91,6 @@ add_subdirectory(gui)
+ 
+ add_subdirectory(main)
+ add_subdirectory(main_consvr)
+-add_subdirectory(main_demoOnly)
++if(NOT RISCOS)
++	add_subdirectory(main_demoOnly)
++endif()
+diff --git a/src/main/CMakeLists.txt b/src/main/CMakeLists.txt
+index 679a436..e2abd94 100644
+--- a/src/main/CMakeLists.txt
++++ b/src/main/CMakeLists.txt
+@@ -22,6 +22,8 @@ elseif(APPLE)
+ 	set(TARGET_NAME ysflight${BITNESS}_gl1 ysflight${BITNESS}_gl2)
+ elseif(ANDROID)
+ 	set(TARGET_NAME ysflight${BITNESS}_gl2)
++elseif(RISCOS)
++	set(TARGET_NAME ysflight${BITNESS}_gl1)
+ elseif(UNIX)
+ 	set(TARGET_NAME ysflight${BITNESS}_gl1 ysflight${BITNESS}_gl2)
+ else()
+@@ -574,6 +576,22 @@ elseif(ANDROID)
+ 		ysflight_graphics_gl2
+ 		fslazywindow
+ 	)
++elseif(RISCOS)
++	target_link_libraries(ysflight${BITNESS}_gl1 
++		ysgl
++		yssystemfont
++		fsguilib_gl1
++		ysflight_platform_riscos
++		ysscenery_dnm_gl1
++		ystexturemanager_gl
++		${OS_LIBRARIES}
++		ysjoystick
++		ysjoycalibdlg_gl1
++		ysflight_graphics_gl1 
++		fslazywindow
++		fssimplewindow
++	)
++	# Sound and voice are linked in (platform/riscos); no plug-in files.
+ elseif(UNIX)
+ 	target_link_libraries(ysflight${BITNESS}_gl1 
+ 		ysgl
+diff --git a/src/ysjoystick/src/CMakeLists.txt b/src/ysjoystick/src/CMakeLists.txt
+index 3219853..30b8291 100644
+--- a/src/ysjoystick/src/CMakeLists.txt
++++ b/src/ysjoystick/src/CMakeLists.txt
+@@ -23,6 +23,10 @@ elseif(APPLE)
+ 	set(platform_SRCS macosx/ysjoyreader-objc.m macosx/ysjoyreader.cpp)
+ 	include_directories(macosx)
+ 	set(platform_HEADERS )
++elseif(RISCOS)
++	# No joystick support yet.
++	set(platform_SRCS null/ysjoyreader.cpp)
++	set(platform_HEADERS "")
+ elseif(UNIX)
+ 	set(platform_SRCS linux/ysjoyreader.cpp)
+ 	include_directories(linux)

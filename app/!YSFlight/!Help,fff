@@ -1,0 +1,33 @@
+!YSFlight - M1 test build
+=========================
+
+This is NOT the game yet. It is the YSFlight Community Edition console
+server (no window, no graphics, no sound), built for RISC OS to check that
+the simulator core works: loading the aircraft, maps and start positions,
+and flying the AI traffic.
+
+Needs: SharedUnixLibrary 1.16 or later and ARMEABISupport (PackMan).
+PThreadTicker 0.03 is included and loaded by !Run.
+
+Double-click !YSFlight. A task window opens and runs:
+  1. the aircraft list        -> Logs.Aircraft (88 aircraft)
+  2. the map list             -> Logs.Fields   (18 maps)
+  3. Aomori start positions   -> Logs.Aomori   (36)
+  4. Hawaii start positions   -> Logs.Hawaii   (56)
+  5. the server, on the screen. It prints "Ready to go!" and then
+     messages about AI aircraft taxiing and landing. Leave it a few
+     minutes, then press Escape.
+Each step's error output goes to a Logs file ending in E (AircraftE,
+ServerE...). If the program crashes, that file has the RISC OS error
+and a backtrace.
+
+Settings are saved in <Choices$Write>.YSFlight.
+
+Please report: the files in Logs, the task window's text (Save from its
+menu), and any error box, with its exact text.
+
+This is an unofficial port, not made or supported by the YSCE
+developers. AI (Anthropic's Claude) has been used as a coding assistant.
+
+Licences: YSFlight Community Edition is under the BSD licence in the
+file "Licence". PThreadTicker: "PThreadTicker-Licence".

@@ -1,0 +1,233 @@
+ysport for RISC OS.
+
+- riscos/ysriscosspecialpath.cpp: the program directory is <YSFlight$Dir>
+  (set by !Run); user, documents and application data are
+  <Choices$Write>/YSFlight, created on first use.
+- riscos/ysopenurl.cpp: YsOpenURL hands the URL to URI_Dispatch.
+- riscos/ysriscoserror.cpp: YsRiscOsInstallErrorReport(). On SIGEMT (a
+  data abort and the like) or SIGOSERROR it writes the RISC OS error, which
+  UnixLib's own report leaves out, and UnixLib's backtrace to stderr, then
+  _exit(2). Same approach as riscos-openttd's patch 15.
+- The rest is the Linux code (UTF-8 encoding, file I/O, timer).
+
+For YSCE ysce_public 1b13297. See docs/PORTING-NOTES.md in riscos-ysflight.
+
+diff --git a/src/ysport/src/CMakeLists.txt b/src/ysport/src/CMakeLists.txt
+index 83c0443..c6b0b87 100644
+--- a/src/ysport/src/CMakeLists.txt
++++ b/src/ysport/src/CMakeLists.txt
+@@ -195,6 +195,17 @@ ELSEIF(ANDROID)
+ 		linux/ysunixrunprocess.cpp
+ 		android/ysandroidspecialpath.cpp
+ 		linux/ysunixsubsectimer.cpp)
++ELSEIF(RISCOS)
++	set (platform_SRCS
++		riscos/ysopenurl.cpp
++		linux/ysunixencoding.cpp
++		linux/ysunixfileinfo.cpp
++		linux/ysunixfileio.cpp
++		linux/ysunixlocale.cpp
++		linux/ysunixrunprocess.cpp
++		riscos/ysriscosspecialpath.cpp
++		riscos/ysriscoserror.cpp
++		linux/ysunixsubsectimer.cpp)
+ ELSEIF(UNIX)
+ 	set (platform_SRCS
+ 		linux/ysopenurl.cpp
+diff --git a/src/ysport/src/riscos/ysopenurl.cpp b/src/ysport/src/riscos/ysopenurl.cpp
+new file mode 100644
+index 0000000..b11a77a
+--- /dev/null
++++ b/src/ysport/src/riscos/ysopenurl.cpp
+@@ -0,0 +1,21 @@
++/* YsOpenURL for RISC OS: hand the URL to the URI handler (URI_Dispatch),
++   which passes it to whichever browser is registered.
++   Part of the RISC OS port of YSFlight; same BSD-3 licence as the rest of ysport. */
++
++#include <kernel.h>
++#include "../ysopenurl.h"
++
++#define URI_Dispatch 0x4E381
++
++YSRESULT YsOpenURL(const char urlStr[])
++{
++	_kernel_swi_regs r;
++	r.r[0]=0;               /* flags: dispatch now */
++	r.r[1]=(int)urlStr;
++	r.r[2]=0;               /* sender task handle: none */
++	if(NULL==_kernel_swi(URI_Dispatch,&r,&r) && 0==(r.r[0]&1))
++	{
++		return YSOK;        /* bit 0 of R0 set on exit = request rejected */
++	}
++	return YSERR;
++}
+diff --git a/src/ysport/src/riscos/ysriscoserror.cpp b/src/ysport/src/riscos/ysriscoserror.cpp
+new file mode 100644
+index 0000000..be5eb4d
+--- /dev/null
++++ b/src/ysport/src/riscos/ysriscoserror.cpp
+@@ -0,0 +1,38 @@
++/* RISC OS: report crashes with the RISC OS error and a backtrace.
++
++   UnixLib turns a processor exception (a data abort, say) into SIGEMT and a
++   RISC OS error into SIGOSERROR. Its own report names the signal but leaves
++   out the error itself, which says what happened and where ("abort on data
++   transfer at &...", which shows whether the fault was in the program or in
++   a module). This handler writes that error and UnixLib's backtrace of every
++   thread to stderr (which !Run sends to YSFlightLog), then stops with _exit.
++
++   Same approach as riscos-openttd's patch 15. Part of the RISC OS port of
++   YSFlight; same BSD-3 licence as the rest of ysport. */
++
++#include <signal.h>
++#include <stdio.h>
++#include <unistd.h>
++#include <kernel.h>
++#include <unixlib/local.h>
++
++#include "../ysport.h"
++
++static void YsRiscOsErrorReport(int signum)
++{
++	const _kernel_oserror *e=_kernel_last_oserror();
++	if(NULL!=e)
++	{
++		fprintf(stderr,"\nRISC OS error &%X: %s\n",(unsigned int)e->errnum,e->errmess);
++	}
++	__write_backtrace(signum);
++	fflush(stderr);
++	/* _exit, not exit: memory may be damaged, so run no destructors. */
++	_exit(2);
++}
++
++void YsRiscOsInstallErrorReport(void)
++{
++	signal(SIGEMT,YsRiscOsErrorReport);
++	signal(SIGOSERROR,YsRiscOsErrorReport);
++}
+diff --git a/src/ysport/src/riscos/ysriscosspecialpath.cpp b/src/ysport/src/riscos/ysriscosspecialpath.cpp
+new file mode 100644
+index 0000000..3b6dc6a
+--- /dev/null
++++ b/src/ysport/src/riscos/ysriscosspecialpath.cpp
+@@ -0,0 +1,104 @@
++/* YsSpecialPath for RISC OS.
++   Paths are returned in UnixLib's Unix form ("<Var$Dir>/name"), which UnixLib
++   turns back into RISC OS paths when files are opened.
++   - Program file/base dir: <YSFlight$Dir> (set by !Run), else the current directory.
++   - User/doc/app-data dir: <Choices$Write>/YSFlight, created on first use.
++   Part of the RISC OS port of YSFlight; same BSD-3 licence as the rest of ysport. */
++
++#include <stdlib.h>
++#include <sys/stat.h>
++
++#include <ysclass.h>
++#include "../ysspecialpath.h"
++
++static const char *YsRiscOsAppDir(void)
++{
++	if(NULL!=getenv("YSFlight$Dir"))
++	{
++		return "<YSFlight$Dir>";
++	}
++	return ".";
++}
++
++static YSRESULT YsRiscOsChoicesDir(YsString &path)
++{
++	if(NULL!=getenv("Choices$Write"))
++	{
++		mkdir("<Choices$Write>/YSFlight",493); // 0755
++		path.Set("<Choices$Write>/YSFlight");
++		return YSOK;
++	}
++	return YSERR;
++}
++
++YSRESULT YsSpecialPath::GetProgramFileName(YsString &path)
++{
++	path.MakeFullPathName(YsRiscOsAppDir(),"!RunImage");
++	return YSOK;
++}
++
++YSRESULT YsSpecialPath::GetProgramFileName(YsWString &wpath)
++{
++	YsString path;
++	GetProgramFileName(path);
++	wpath.SetUTF8String(path);
++	return YSOK;
++}
++
++YSRESULT YsSpecialPath::GetProgramBaseDir(YsString &path)
++{
++	path.Set(YsRiscOsAppDir());
++	return YSOK;
++}
++
++YSRESULT YsSpecialPath::GetProgramBaseDir(YsWString &wpath)
++{
++	wpath.SetUTF8String(YsRiscOsAppDir());
++	return YSOK;
++}
++
++YSRESULT YsSpecialPath::GetUserDir(YsString &path)
++{
++	return YsRiscOsChoicesDir(path);
++}
++
++YSRESULT YsSpecialPath::GetUserDir(YsWString &wpath)
++{
++	YsString path;
++	if(YSOK==YsRiscOsChoicesDir(path))
++	{
++		wpath.SetUTF8String(path);
++		return YSOK;
++	}
++	return YSERR;
++}
++
++YSRESULT YsSpecialPath::GetUserDocDir(YsString &path)
++{
++	return YsRiscOsChoicesDir(path);
++}
++
++YSRESULT YsSpecialPath::GetUserDocDir(YsWString &wpath)
++{
++	return GetUserDir(wpath);
++}
++
++YSRESULT YsSpecialPath::GetUserAppDataDir(YsString &path)
++{
++	return YsRiscOsChoicesDir(path);
++}
++
++YSRESULT YsSpecialPath::GetUserAppDataDir(YsWString &wpath)
++{
++	return GetUserDir(wpath);
++}
++
++YSRESULT YsSpecialPath::GetAllUsersDir(YsString &)
++{
++	return YSERR;
++}
++
++YSRESULT YsSpecialPath::GetAllUsersDir(YsWString &)
++{
++	return YSERR;
++}
+diff --git a/src/ysport/src/ysport.h b/src/ysport/src/ysport.h
+index 863569e..a19a97c 100644
+--- a/src/ysport/src/ysport.h
++++ b/src/ysport/src/ysport.h
+@@ -46,5 +46,11 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #include "yslocale.h"
+ #include "ysopenurl.h"
+ 
++#ifdef __riscos__
++/*! RISC OS: on a data abort (SIGEMT) or RISC OS error (SIGOSERROR), write the
++    RISC OS error and a backtrace to stderr, then exit. Call first in main(). */
++void YsRiscOsInstallErrorReport(void);
++#endif
++
+ /* } */
+ #endif

@@ -1,0 +1,82 @@
+CMake: RISC OS build (RISCOS=1, set by the toolchain file).
+
+- fssimplewindow: link GLU, EGL, OSMesa (riscos-mesa devkit); for now the
+  window is the console stand-in (nownd), until M2's Wimp/EGL back end.
+- yssimplesound and yssystemfont: the silent/null back ends for now.
+- ysgl: when cross-compiling, don't build and run the GLSL host tools; use
+  the ysglslprogram.c/.h in the repository, as Android and UWP do.
+
+For YSCE ysce_public 1b13297. See docs/PORTING-NOTES.md in riscos-ysflight.
+
+diff --git a/src/fssimplewindow/src/CMakeLists.txt b/src/fssimplewindow/src/CMakeLists.txt
+index fa9f318..c9dcbd4 100644
+--- a/src/fssimplewindow/src/CMakeLists.txt
++++ b/src/fssimplewindow/src/CMakeLists.txt
+@@ -9,6 +9,9 @@ if(APPLE)
+ 	set(LIB_DEPENDENCY ${COCOA_LIB} ${OPENGL_LIB})
+ elseif("${CMAKE_SYSTEM_NAME}" STREQUAL "Android")
+ 	set(LIB_DEPENDENCY EGL GLESv2)
++elseif(RISCOS)
++	# riscos-mesa devkit: classic OSMesa behind our EGL 1.4.
++	set(LIB_DEPENDENCY GLU EGL OSMesa z m)
+ elseif(UNIX)
+ 	set(LIB_DEPENDENCY GL GLU X11)
+ else()
+@@ -34,6 +37,11 @@ elseif(APPLE)
+ 		macosx/fsmacosxwrappercpp.cpp
+ 		macosx/fsmacosxwrapperobjc.m
+ 	)
++elseif(RISCOS)
++	# M1: no window yet (console stand-in). M2 replaces this with riscos/.
++	set(platform_SRCS
++		nownd/fssimplenowindow.cpp
++	)
+ elseif(UNIX)
+ 	set(platform_SRCS
+ 		glx/fsglxkeymap.cpp
+diff --git a/src/ysgl/src/CMakeLists.txt b/src/ysgl/src/CMakeLists.txt
+index 54721bd..a1ebad0 100644
+--- a/src/ysgl/src/CMakeLists.txt
++++ b/src/ysgl/src/CMakeLists.txt
+@@ -182,7 +182,9 @@ endif()
+ # Therefore, the following block is recognized only if "ysclass_INCLUDE_DIR" is defined, which implies that Ys-Class library is in
+ # the same build chain.  Otherwise, the whole block will be skipped.  The assumption is that the two files are already included in the package.
+ 
+-if(NOT "${CMAKE_SYSTEM_NAME}" STREQUAL "WindowsStore" AND NOT "${CMAKE_SYSTEM_NAME}" STREQUAL "Android")
++# Cross builds (RISC OS) can't run these host tools, so they use the
++# ysglslprogram.c/.h kept in the repository, as Android and UWP do.
++if(NOT "${CMAKE_SYSTEM_NAME}" STREQUAL "WindowsStore" AND NOT "${CMAKE_SYSTEM_NAME}" STREQUAL "Android" AND NOT CMAKE_CROSSCOMPILING)
+ 	if(TARGET ysclass)
+ 		add_executable(ysgl_makec glsl_src/makec.cpp)
+ 		target_link_libraries(ysgl_makec ysclass)
+diff --git a/src/yssimplesound/src/CMakeLists.txt b/src/yssimplesound/src/CMakeLists.txt
+index fd53076..0453f4e 100644
+--- a/src/yssimplesound/src/CMakeLists.txt
++++ b/src/yssimplesound/src/CMakeLists.txt
+@@ -15,6 +15,12 @@ elseif(APPLE)
+ 	set(SUBDIR macosx)
+ 	set(SRCS ${SUBDIR}/yssimplesound_macosx_cpp.cpp ${SUBDIR}/yssimplesound_macosx_objc.m)
+ 	set(LIBS ${AVFOUNDATION_LIB})
++elseif(RISCOS)
++	# M1: silent. M3 adds an SDL2 audio backend.
++	set(DUMMY_LIBRARY_NAME yssimplesound_riscos)
++	set(SUBDIR nownd)
++	set(LIBS)
++	set(SRCS nownd/yssimplesound_nownd.cpp)
+ elseif(UNIX)
+ 	find_library(ALSALIB NAMES asound)
+ 	set(DUMMY_LIBRARY_NAME yssimplesound_linux_alsa)
+diff --git a/src/yssystemfont/src/CMakeLists.txt b/src/yssystemfont/src/CMakeLists.txt
+index 5a560a0..30394eb 100644
+--- a/src/yssystemfont/src/CMakeLists.txt
++++ b/src/yssystemfont/src/CMakeLists.txt
+@@ -10,6 +10,9 @@ elseif(MSVC)
+ 	set(SRCS windows/yswin32systemfont.cpp)
+ elseif(APPLE)
+ 	set(SRCS macosx/ysmacosxsystemfont.cpp macosx/ysmacosxsystemfont_objc.m)
++elseif(RISCOS)
++	# M1: null font (blank Unicode text). M3 adds a FontManager backend.
++	set(SRCS null/ysnullsystemfont.cpp)
+ elseif(UNIX)
+ 	set(SRCS linux/ysunixsystemfont.cpp)
+ else()

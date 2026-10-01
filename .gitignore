@@ -1,0 +1,22 @@
+dist/
+work/
+*.zip
+*.tgz
+*.o
+*.a
+.DS_Store
+
+# Working notes, never committed
+CLAUDE.md
+claude.md
+**/CLAUDE.md
+**/claude.md
+START-HERE.md
+start-here.md
+*START-HERE*.md
+*start-here*.md
+
+# Notes passed between projects, never committed
+handoffs/
+**/handoffs/
+*handoff*.md

@@ -1,0 +1,45 @@
+Read and write floats in network packets with memcpy.
+
+FsSetFloat/FsGetFloat stored a float through a float* into the packet
+buffer, which is often not 4-byte aligned. ARM's VFP faults on an
+unaligned float load or store (RISC OS: "Abort on data transfer"). Found
+with riscos-crossdev's QEMU alignment trap: the console server aborted in
+FsAirplaneProperty::NetworkEncode as soon as AI traffic started.
+The byte order (little-endian) is unchanged. Upstream could take it.
+
+For YSCE 231e711. See docs/PORTING-NOTES.md in riscos-ysflight.
+
+diff --git a/src/util/fsnetutil.h b/src/util/fsnetutil.h
+index 6c835c9..de71b03 100644
+--- a/src/util/fsnetutil.h
++++ b/src/util/fsnetutil.h
+@@ -1,5 +1,6 @@
+ #ifndef FSNETUTIL_IS_INCLUDED
+ #define FSNETUTIL_IS_INCLUDED
++#include <string.h>
+ /* { */
+ ////////////////////////////////////////////////////////////
+ inline void FsSetInt(unsigned char *dat,int a)
+@@ -70,15 +71,17 @@ inline unsigned short FsGetUnsignedShort(const unsigned char *dat)
+ 
+ inline void FsSetFloat(unsigned char *dat,float a)
+ {
+-// Assume Intel CPU
+-	float *b;
+-	b=(float *)(dat);
+-	(*b)=a;
++	// Little-endian byte order, as before.  memcpy instead of a float* store:
++	// dat is often not 4-byte aligned, and ARM's VFP faults on unaligned
++	// float loads/stores (RISC OS reports "Abort on data transfer").
++	memcpy(dat,&a,sizeof(a));
+ }
+ 
+ inline float FsGetFloat(const unsigned char *dat)
+ {
+-	return *((float *)dat);
++	float a;
++	memcpy(&a,dat,sizeof(a));
++	return a;
+ }
+ 
+ inline void FsSetChar(unsigned char *dat,char a)

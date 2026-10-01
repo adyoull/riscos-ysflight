@@ -1,0 +1,123 @@
+Console (no window) back end: RISC OS keys, and two fixes.
+
+- RISC OS: read keys with OS_Byte 129 (no termio); cursor keys are
+  &8C-&8F. Sleep with usleep. FsChangeToProgramDir goes to <YSFlight$Dir>.
+- FsCheckWindowOpen() was missing, so the game couldn't link with this
+  back end; it returns 1. #include <string.h> for memset.
+
+For YSCE ysce_public 1b13297. See docs/PORTING-NOTES.md in riscos-ysflight.
+
+diff --git a/src/fssimplewindow/src/nownd/fssimplenowindow.cpp b/src/fssimplewindow/src/nownd/fssimplenowindow.cpp
+index dae2a1a..546a534 100644
+--- a/src/fssimplewindow/src/nownd/fssimplenowindow.cpp
++++ b/src/fssimplewindow/src/nownd/fssimplenowindow.cpp
+@@ -29,12 +29,17 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ #include <stdio.h>
+ #include <stdlib.h>
++#include <string.h>
+ #include <time.h>
+ #include <chrono>
+ 
+ #ifdef _WIN32
+ 	#include <io.h>
+ 	#include <conio.h>
++#elif defined(__riscos__)
++	// RISC OS: keys are read with OS_Byte 129 (INKEY), no terminal set-up.
++	#include <kernel.h>
++	#include <unistd.h>
+ #elif defined(__APPLE__)
+ 	#include <sys/ioctl.h>
+ 	#include <sgtty.h>
+@@ -74,7 +79,7 @@ static int mapFSKEYtoVK[FSKEY_NUM_KEYCODE];
+ 
+ #ifdef __APPLE__
+ static struct sgttyb OriginalConsoleSetting;
+-#elif !defined(_WIN32)
++#elif !defined(_WIN32) && !defined(__riscos__)
+ struct termio OriginalConsoleSetting;
+ #endif
+ 
+@@ -239,7 +244,7 @@ static void FsCreateKeyMapping(void)
+ 
+ static void Restore(int)
+ {
+-#ifdef _WIN32
++#if defined(_WIN32) || defined(__riscos__)
+ #elif defined(__APPLE__)
+ 	ioctl(fileno(stdin),TIOCSETP,&OriginalConsoleSetting);
+ #else
+@@ -251,7 +256,7 @@ static void Restore(int)
+ 
+ static void FsSetUpInkeyConsole(void)
+ {
+-#ifdef _WIN32
++#if defined(_WIN32) || defined(__riscos__)
+ #elif defined(__APPLE__)
+ 	signal(SIGQUIT,Restore);
+ 	signal(SIGINT,Restore);
+@@ -309,6 +314,12 @@ void FsOpenWindow(const FsOpenWindowOption &)
+ 	}
+ }
+ 
++int FsCheckWindowOpen(void)
++{
++	// No window: the console is always "open".
++	return 1;
++}
++
+ void FsCloseWindow(void)
+ {
+ 	Restore(0);
+@@ -423,6 +434,28 @@ void FsPollDevice(void)
+ 				}
+ 			}
+ 		}
++	#elif defined(__riscos__)
++		// OS_Byte 129 with time limit 0: R2=0 and R1=key if one is waiting.
++		// Cursor keys arrive as 0x8C-0x8F (left,right,down,up) by default.
++		_kernel_swi_regs r;
++		r.r[0]=129;
++		r.r[1]=0;
++		r.r[2]=0;
++		if(NULL==_kernel_swi(6 /* OS_Byte */,&r,&r) && 0==r.r[2])
++		{
++			int ky=r.r[1]&0xff;
++			switch(ky)
++			{
++			case 0x8c: FsPushKey(FSKEY_LEFT);  break;
++			case 0x8d: FsPushKey(FSKEY_RIGHT); break;
++			case 0x8e: FsPushKey(FSKEY_DOWN);  break;
++			case 0x8f: FsPushKey(FSKEY_UP);    break;
++			default:
++				FsPushChar(ky);
++				FsPushKey(mapVKtoFSKEY[ky]);
++				break;
++			}
++		}
+ 	#else
+ 		int ky;
+ 		ky=getchar();
+@@ -476,6 +509,8 @@ void FsSleep(int ms)
+ {
+ #ifdef WIN32
+ 	Sleep(ms);
++#elif defined(__riscos__)
++	usleep(ms*1000);
+ #else
+ 	fd_set set;
+ 	struct timeval wait;
+@@ -583,6 +618,13 @@ void FsSwapBuffers(void)
+ 
+ void FsChangeToProgramDir(void)
+ {
++#ifdef __riscos__
++	// !Run sets YSFlight$Dir; the data files (aircraft/, scenery/...) are there.
++	if(NULL!=getenv("YSFlight$Dir"))
++	{
++		chdir("<YSFlight$Dir>");
++	}
++#endif
+ }
+ 
+ int FsGetNumCurrentTouch(void)

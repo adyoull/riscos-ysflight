@@ -1,0 +1,37 @@
+Binary STL: read floats with memcpy.
+
+Binary STL records are 50 bytes long, so the floats in them are often
+unaligned, and ARM's VFP faults on an unaligned float load. Upstream could
+take it.
+
+For YSCE ysce_public 1b13297. See docs/PORTING-NOTES.md in riscos-ysflight.
+
+diff --git a/src/ysclass/src/ysshellstl.cpp b/src/ysclass/src/ysshellstl.cpp
+index e8b7fca..939f9f4 100644
+--- a/src/ysclass/src/ysshellstl.cpp
++++ b/src/ysclass/src/ysshellstl.cpp
+@@ -50,8 +50,11 @@ static float YsGetFloat(const unsigned char dat[])
+ 	intelOrMotorola=(char *)(&a);
+ 	if(intelOrMotorola[0]==0x7f)
+ 	{
+-		// For Intel chip
+-		return *((float *)dat);
++		// For Intel chip (memcpy: binary STL records are 50 bytes, so dat is
++		// often unaligned, which faults on ARM VFP loads)
++		float f;
++		memcpy(&f,dat,sizeof(f));
++		return f;
+ 	}
+ 	else
+ 	{
+@@ -61,7 +64,9 @@ static float YsGetFloat(const unsigned char dat[])
+ 		conv[1]=dat[2];
+ 		conv[2]=dat[1];
+ 		conv[3]=dat[0];
+-		return *((float *)conv);
++		float f;
++		memcpy(&f,conv,sizeof(f));
++		return f;
+ 	}
+ }
+ 

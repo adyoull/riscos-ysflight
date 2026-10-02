@@ -219,10 +219,10 @@ index 0000000..0fc6405
 +#endif
 diff --git a/src/fssimplewindow/src/riscos/fsriscoswrapper.cpp b/src/fssimplewindow/src/riscos/fsriscoswrapper.cpp
 new file mode 100644
-index 0000000..0a4bd83
+index 0000000..a4974c4
 --- /dev/null
 +++ b/src/fssimplewindow/src/riscos/fsriscoswrapper.cpp
-@@ -0,0 +1,1398 @@
+@@ -0,0 +1,1403 @@
 +/* fssimplewindow for RISC OS: a Wimp window drawn with OpenGL through
 +   riscos-mesa's EGL (native window = Wimp window handle).
 +
@@ -337,6 +337,9 @@ index 0000000..0a4bd83
 +static int wheelValid,wheelY;
 +
 +static int exposure;
++
++/* Time spent in eglSwapBuffers, for fslazywindow's timing report */
++long long fsRiscOsSwapMs;
 +
 +/* Clipboard (inside the program only, for fsguilib's text boxes) */
 +static char *clipBoard;
@@ -1470,7 +1473,9 @@ index 0000000..0a4bd83
 +	}
 +	if(EGL_NO_SURFACE!=eglSurf)
 +	{
++		long long int t0=FsSubSecondTimer();
 +		eglSwapBuffers(eglDpy,eglSurf);
++		fsRiscOsSwapMs+=FsSubSecondTimer()-t0;
 +		/* The surface takes a new window size at a swap */
 +		CheckResize();
 +	}

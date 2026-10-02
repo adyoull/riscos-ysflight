@@ -1,0 +1,96 @@
+RISC OS: write where the time goes to the log every 5 seconds.
+
+In the main loop: time spent polling (FsPollDevice), in Interval (the
+simulation), in Draw (the game's drawing, software OpenGL included, and the
+swap, which fssimplewindow's RISC OS back end times separately) and
+sleeping, averaged per loop.
+
+For YSCE ysce_public 1b13297. See docs/PORTING-NOTES.md in riscos-ysflight.
+
+diff --git a/src/fslazywindow/src/linux_win/fslazywindow.cpp b/src/fslazywindow/src/linux_win/fslazywindow.cpp
+index b5b23de..bdd6189 100644
+--- a/src/fslazywindow/src/linux_win/fslazywindow.cpp
++++ b/src/fslazywindow/src/linux_win/fslazywindow.cpp
+@@ -27,6 +27,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ //////////////////////////////////////////////////////////// */
+ 
++#include <stdio.h>
+ #include <fssimplewindow.h>
+ 
+ #include "../fslazywindow.h"
+@@ -128,6 +129,14 @@ int main(int ac,char *av[])
+ 	FsRegisterCloseWindowCallBack(UserWantToCloseProgram,nullptr);
+ 
+ 
++#ifdef __riscos__
++	/* RISC OS: where the time goes, written to the log every 5 seconds:
++	   poll (FsPollDevice), interval (the simulation), draw (the game's
++	   drawing, software OpenGL included, and the swap), of which swap
++	   (EGL showing the frame), and sleep. */
++	long long tPoll=0,tInterval=0,tDraw=0,tSleep=0,nFrame=0,nDraw=0,tReport=FsSubSecondTimer();
++	extern long long fsRiscOsSwapMs;
++#endif
+ 	auto t0=FsSubSecondTimer();
+ 	while(0!=FsCheckWindowOpen() &&
+ 	      true!=FsLazyWindowApplicationBase::GetApplication()->MustTerminate())
+@@ -136,7 +145,13 @@ int main(int ac,char *av[])
+ 		auto passed=t-t0;
+ 		t0=t;
+ 
++#ifdef __riscos__
++		long long m0=FsSubSecondTimer();
++#endif
+ 		FsPollDevice();
++#ifdef __riscos__
++		long long m1=FsSubSecondTimer();
++#endif
+ 		busy=true;
+ 		{
+ 		#ifdef FPS_MEASURE
+@@ -144,6 +159,11 @@ int main(int ac,char *av[])
+ 		#endif
+ 			FsLazyWindowApplicationBase::GetApplication()->Interval();
+ 		}
++#ifdef __riscos__
++		long long m2=FsSubSecondTimer();
++		tPoll+=m1-m0;
++		tInterval+=m2-m1;
++#endif
+ 
+ 
+ 		busy=false;
+@@ -155,13 +175,33 @@ int main(int ac,char *av[])
+ 			FsSimpleWindow_FpsDebugTimer timer("D2");
+ 		#endif
+ 			FsLazyWindowApplicationBase::GetApplication()->Draw();
++#ifdef __riscos__
++			nDraw++;
++#endif
+ 		}
++#ifdef __riscos__
++		long long m3=FsSubSecondTimer();
++		tDraw+=m3-m2;
++		nFrame++;
++#endif
+ 
+ 		auto sleepMS=FsLazyWindowApplicationBase::GetApplication()->GetMinimumSleepPerInterval();
+ 		if(sleepMS>passed)
+ 		{
+ 			FsSleep(sleepMS-(int)passed);
+ 		}
++#ifdef __riscos__
++		long long m4=FsSubSecondTimer();
++		tSleep+=m4-m3;
++		if(5000<=m4-tReport && 0<nFrame)
++		{
++			fprintf(stderr,"Timing: %lld loops, %lld draws in %lld ms. Per loop: poll %lld, interval %lld, draw %lld (swap %lld), sleep %lld ms\n",
++			    nFrame,nDraw,m4-tReport,tPoll/nFrame,tInterval/nFrame,tDraw/nFrame,fsRiscOsSwapMs/nFrame,tSleep/nFrame);
++			tPoll=tInterval=tDraw=tSleep=nFrame=nDraw=0;
++			fsRiscOsSwapMs=0;
++			tReport=m4;
++		}
++#endif
+ 	}
+ 
+ 	FsLazyWindowApplicationBase::GetApplication()->BeforeTerminate();

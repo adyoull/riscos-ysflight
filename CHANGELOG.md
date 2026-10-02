@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased: M2 test 3 (2026-10-02)
+
+- Timing: every 5 seconds the log gets a line with the time per loop spent
+  polling, in the simulation, drawing (software OpenGL) and showing the
+  frame (ysce_public patch 08).
+- `YSFlight$Threads 0` (a commented line in `!Run`) runs the simulator's
+  thread pool tasks in order, to compare (patch 02, now "threads").
+- Pi results with test 2: 2.44 fps with a near full screen window and the
+  default settings; 10.89 fps drawing at 640x480 (`YSFlight$Render`) with
+  ground texture, transparency and solid clouds off.
+
 ## Unreleased: M2 test 2 (2026-10-02)
 
 - **Crash at the opening demo fixed**: built with

@@ -28,6 +28,13 @@ Unset YSFlight$Render
 | Set YSFlight$Size 960x720
 | Set YSFlight$Render 640x480
 
+| The simulator hands work to 4 threads, which on RISC OS all share one
+| processor core. To compare speed with the work done in order instead,
+| take the | off the Set line. The log (YSFlightLog) gets a timing line
+| every 5 seconds.
+Unset YSFlight$Threads
+| Set YSFlight$Threads 0
+
 | The program (about 16 MB) is loaded into the slot; its heap goes in
 | dynamic areas ("YSFlight Heap").
 WimpSlot -min 20480K -max 20480K

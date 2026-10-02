@@ -1,7 +1,8 @@
 01-unaligned-stl.patch
-02-thread-fixes.patch
+02-threads.patch
 03-riscos-cmake.patch
 04-riscos-ysport.patch
 05-nownd-console.patch
 06-riscos-window.patch
 07-riscos-bitmap-font.patch
+08-riscos-timing.patch

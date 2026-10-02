@@ -1,0 +1,132 @@
+Threads: two small fixes, and a RISC OS switch to run tasks in order.
+
+Threads run as upstream: riscos-unixlib 5.0.3.1 switches threads through
+Wimp_Poll, and PThreadTicker 0.03 ships with the app.
+- ysthreadpool.cpp uses printf without #include <cstdio>.
+- YsThreadController::RunParallel (pthread version) starts nTask-1 threads
+  but joined nTask, the last one past the end of the handle array.
+- RISC OS: with the system variable YSFlight$Threads set to 0, the thread
+  pool creates no threads and Run() and YsRunTaskParallel run the tasks in
+  order on the calling thread (YsRiscOsThreadsOff, read once). For
+  comparing speed: UnixLib's threads all share one core.
+Upstream could take the first two.
+
+For YSCE ysce_public 1b13297. See docs/PORTING-NOTES.md in riscos-ysflight.
+
+diff --git a/src/ysclass11/src/ysthread11.cpp b/src/ysclass11/src/ysthread11.cpp
+index 4c26582..ace8cc4 100644
+--- a/src/ysclass11/src/ysthread11.cpp
++++ b/src/ysclass11/src/ysthread11.cpp
+@@ -28,11 +28,22 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ //////////////////////////////////////////////////////////// */
+ 
+ #include "ysthread11.h"
++#include "ysthreadpool.h"
+ 
+ 
+ 
+ void YsRunTaskParallel(YSSIZE_T nTask,YsTask *const task[])
+ {
++#ifdef __riscos__
++	if(YsRiscOsThreadsOff())
++	{
++		for(YSSIZE_T idx=0; idx<nTask; ++idx)
++		{
++			task[idx]->StartLocal();
++		}
++		return;
++	}
++#endif
+ 	if(1==nTask)
+ 	{
+ 		task[0]->StartLocal();
+diff --git a/src/ysclass11/src/ysthreadpool.cpp b/src/ysclass11/src/ysthreadpool.cpp
+index 4f33a05..f09c531 100644
+--- a/src/ysclass11/src/ysthreadpool.cpp
++++ b/src/ysclass11/src/ysthreadpool.cpp
+@@ -28,6 +28,22 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ //////////////////////////////////////////////////////////// */
+ 
+ #include "ysthreadpool.h"
++#include <cstdio>
++#ifdef __riscos__
++#include <cstdlib>
++#include <cstring>
++
++bool YsRiscOsThreadsOff(void)
++{
++	static int off=-1;
++	if(off<0)
++	{
++		const char *v=getenv("YSFlight$Threads");
++		off=(NULL!=v && 0==strcmp(v,"0")) ? 1 : 0;
++	}
++	return 1==off;
++}
++#endif
+ 
+ 
+ 
+@@ -200,6 +216,12 @@ void YsThreadPool::SubThread::ThreadFunc(void)
+ 
+ YsThreadPool::YsThreadPool(int nThread)
+ {
++#ifdef __riscos__
++	if(YsRiscOsThreadsOff())
++	{
++		nThread=0;                          /* Run() runs the tasks in order */
++	}
++#endif
+ 	this->nThread=nThread;
+ 	threadArray=new SubThread [nThread];
+ 
+@@ -253,7 +275,7 @@ YsThreadPool::~YsThreadPool()
+ 
+ void YsThreadPool::Run(long long int nTask,const std::function<void()> taskArray[])
+ {
+-	if(true==preventRecursiveUse.try_lock())
++	if(0<nThread && true==preventRecursiveUse.try_lock())
+ 	{
+ 		for(decltype(nThread) idx=0; idx<nThread; ++idx)
+ 		{
+@@ -290,7 +312,7 @@ void YsThreadPool::Run(long long int nTask,const std::function<void()> taskArray
+ 	}
+ 	else
+ 	{
+-		// This pool is already in use.  Run sequentially.
++		// No threads, or this pool is already in use.  Run sequentially.
+ 		for(decltype(nTask) idx=0; idx<nTask; ++idx)
+ 		{
+ 			taskArray[idx]();
+diff --git a/src/ysclass11/src/ysthreadpool.h b/src/ysclass11/src/ysthreadpool.h
+index 9255168..aaa7126 100644
+--- a/src/ysclass11/src/ysthreadpool.h
++++ b/src/ysclass11/src/ysthreadpool.h
+@@ -37,6 +37,14 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #include <functional>
+ #include <condition_variable>
+ 
++#ifdef __riscos__
++/*! RISC OS: true if the system variable YSFlight$Threads is 0, to run the
++    thread pool's and YsRunTaskParallel's tasks in order on the calling
++    thread instead (for comparing speed: UnixLib's threads share one core).
++    Read once. */
++bool YsRiscOsThreadsOff(void);
++#endif
++
+ class YsThreadPool
+ {
+ public:
+diff --git a/src/ysport/src/ysthread.cpp b/src/ysport/src/ysthread.cpp
+index 8923e07..d992139 100644
+--- a/src/ysport/src/ysthread.cpp
++++ b/src/ysport/src/ysthread.cpp
+@@ -162,7 +162,7 @@ YSRESULT YsThreadController::RunParallel(int nTask,YsTask *const task[])
+ 			pthread_create(&hThread[i],NULL,YsPthreadLaunch,(void *)task[i]);
+ 		}
+ 		task[nTask-1]->StartLocal();
+-		for(int i=0; i<nTask; i++)
++		for(int i=0; i<nTask-1; i++)  // nTask-1 threads were started
+ 		{
+ 			pthread_join(hThread[i],NULL);
+ 		}

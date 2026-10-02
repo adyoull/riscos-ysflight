@@ -1,0 +1,46 @@
+RISC OS: the OpenGL 2 (GLSL) game as an optional target, to compare.
+
+ysflight32_gl2 gets the RISC OS libraries (as gl1, with the gl2 ones) and
+is in the RISC OS target list, so it has the common libraries too. It is
+only built when asked for (build/build.sh GL2=1); the test zip carries the
+gl1 game. With riscos-mesa's software renderer every pixel goes through the
+GLSL interpreter, so it is far slower: on the host, 1556 ms a frame
+against 86 ms for gl1 (F-18 at Misawa, 640x480).
+
+For YSCE 231e711, after 03-riscos-cmake. See docs/PORTING-NOTES.md in riscos-ysflight.
+
+--- a/src/main/CMakeLists.txt
++++ b/src/main/CMakeLists.txt
+@@ -23,7 +23,8 @@
+ elseif(ANDROID)
+ 	set(TARGET_NAME ysflight${BITNESS}_gl2)
+ elseif(RISCOS)
+-	set(TARGET_NAME ysflight${BITNESS}_gl1)
++	# gl2 is only built when asked for (build.sh GL2=1), to compare.
++	set(TARGET_NAME ysflight${BITNESS}_gl1 ysflight${BITNESS}_gl2)
+ elseif(UNIX)
+ 	set(TARGET_NAME ysflight${BITNESS}_gl1 ysflight${BITNESS}_gl2)
+ else()
+@@ -592,6 +593,22 @@
+ 		fssimplewindow
+ 	)
+ 	# Sound and voice are linked in (platform/riscos); no plug-in files.
++	# The OpenGL 2 (GLSL) build, for comparison only: built when asked for
++	# (make ysflight32_gl2), not by default.
++	target_link_libraries(ysflight${BITNESS}_gl2 
++		ysgl
++		yssystemfont
++		fsguilib_gl2
++		ysflight_platform_riscos
++		ysscenery_dnm_gl2
++		ystexturemanager_gl
++		${OS_LIBRARIES}
++		ysjoystick
++		ysjoycalibdlg_gl2
++		ysflight_graphics_gl2
++		fslazywindow
++		fssimplewindow
++	)
+ elseif(UNIX)
+ 	target_link_libraries(ysflight${BITNESS}_gl1 
+ 		ysgl

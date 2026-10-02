@@ -18,6 +18,7 @@ riscos-mesa devkit 20.3.5-11.
 | ysce 08 riscos-title-picture | graphics/gl/fsopengl.cpp, ui/fsrunloop.cpp | menu picture scaled once; on RISC OS one picture per session (a PNG decode is ~1 s on a Pi) | the scaling part |
 | ysce 09 quiet-formation-autopilot | autopilot/fsformationautopilot.cpp | two debug printf calls on every step | yes |
 | ysce 10 riscos-graphics-defaults | config/fsconfig.cpp | particle smoke/clouds and ground texture off in a new RISC OS config (speed, below) | |
+| ysce 11 riscos-gl2-target | main/CMakeLists.txt | optional OpenGL 2 (GLSL) game, to compare (GL2=1) | |
 | ysce_public 01 unaligned-stl | ysclass/src/ysshellstl.cpp | unaligned float load in binary STL | yes |
 | ysce_public 02 thread-fixes | ysclass11/src/ysthreadpool.cpp, ysport/src/ysthread.cpp | missing `<cstdio>`; `RunParallel` joined one thread too many | yes |
 | ysce_public 03 riscos-cmake | yssimplesound, ysgl CMakeLists | silent sound for now; no GLSL host tools when cross-compiling | |
@@ -135,5 +136,10 @@ Per frame at 640x480, F-18E, Aomori field:
   (FsGroundSky::DrawByFog, untextured, `_swrast_fog_rgba_span` 16%),
   the ground mesh, scenery, about 7 clears a frame. Smaller render size
   (`YSFlight$Render`) scales it down.
+- **OpenGL 2 (GLSL) build, for comparison (ysce 11):** same runway frame,
+  12161M instructions (gl1: 603M) and 1556 ms a frame natively on the
+  host against 86 ms: about 20 times slower. 80% is Mesa's GLSL
+  interpreter (`_mesa_execute_program_batch`) running the per-pixel
+  shaders; it also samples a shadow depth texture. The picture is right.
 - The menu redecoded a 1920x990 title PNG every 8 s (~1200M instructions)
   and rescaled it on every redraw: ysce 08.

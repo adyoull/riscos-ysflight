@@ -4,7 +4,8 @@
 # NORTH10000_01) under callgrind with the given flight.cfg lines; prints
 # the instructions per measured frame. Fixed 50 ms steps (PROF_FIXEDDT), so
 # a run under valgrind flies like a native one. Out: $PROF/out/NAME-POS.*
-# (callgrind file, log, last frame as PPM). VALGRIND= runs natively and
+# (callgrind file, log, last frame as PPM). GAME=<binary> profiles another
+# build (e.g. ysflight64_gl2). VALGRIND= runs natively and
 # prints the time per frame instead.
 set -euo pipefail
 : "${PROF:=/tmp/ysprof}"
@@ -20,7 +21,7 @@ export LD_LIBRARY_PATH=$PROF/gl PROF_FIXEDDT=50 PROF_SIZE=${SIZE:-640x480}
 export PROF_KEYS="30:57:1,60:1:2" PROF_SKIP=${SKIP:-200} PROF_FRAMES=${FR:-20}
 export PROF_PPM=$out/$name-$pos.ppm
 VG=${VALGRIND-valgrind --tool=callgrind --instr-atstart=no --callgrind-out-file=$out/$name-$pos.cg}
-$VG "$PROF/build/main/ysflight64_gl1" -configdir "$cfg" -userdir "$out/user" \
+$VG "${GAME:-$PROF/build/main/ysflight64_gl1}" -configdir "$cfg" -userdir "$out/user" \
   -freeflight F-18E_SUPERHORNET AOMORI "$pos" > "$out/$name-$pos.log" 2>&1 || true
 if [ -n "$VG" ]; then
   ir=$(callgrind_annotate "$out/$name-$pos.cg" | awk '/PROGRAM TOTALS/{gsub(",","",$1); print $1}')

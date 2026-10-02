@@ -15,6 +15,10 @@
   take all the CPU (ysce_public patch 09).
 - No more "MakeDecision ... INPOSITION" lines in the log (ysce patch 09).
 - `tools/profile/`: host profiling with riscos-mesa's Mesa.
+- OpenGL 2 (GLSL) game for comparison: `GL2=1 build/build.sh` and
+  `build/package-gl2.sh` make an add-on zip (RunGL2 + RunImageGL2) to
+  unzip over !YSFlight (ysce patch 11). About 20 times slower than the
+  normal build on the host.
 
 ## Unreleased: M2 test 3 (2026-10-02)
 

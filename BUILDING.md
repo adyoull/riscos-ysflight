@@ -28,6 +28,11 @@ probes. About 5 minutes on 2 cores. Re-running is safe.
 upstream `runtime/` data and the console server as an Absolute file
 (`elf2aif -e`). It stops if a build path is found in the app.
 
+To compare with the OpenGL 2 (GLSL) game: `GL2=1 build/build.sh` also
+builds `ysflight32_gl2`, and `build/package-gl2.sh VERSION` makes
+`dist/YSFlight-gl2-<version>.zip` (RunImageGL2 and an Obey file RunGL2) to
+unzip over an !YSFlight of the same version.
+
 ## Checks
 
 - `tools/check-stack-probes.py ELF`: must report 0 unprobed frames.

@@ -18,8 +18,11 @@ mkdir -p build; cd build
 cmake ../YSCE/src -DCMAKE_TOOLCHAIN_FILE="$RYS_DIR/build/toolchain-riscos.cmake" \
   -DRISCOS_TOOLCHAIN="$RISCOS_TOOLCHAIN" -DRISCOS_DEVKIT="$RISCOS_DEVKIT" \
   -DCMAKE_BUILD_TYPE=Release -DRISCOS_EXTRA_FLAGS="$MAP" >/dev/null
-make -j"$JOBS" ysflight32_nownd ysflight32_gl1
-for f in main_consvr/ysflight32_nownd main/ysflight32_gl1; do
+# GL2=1 also builds the OpenGL 2 (GLSL) game, for comparison (package-gl2.sh).
+TARGETS="ysflight32_nownd ysflight32_gl1"; FILES="main_consvr/ysflight32_nownd main/ysflight32_gl1"
+if [ -n "${GL2:-}" ]; then TARGETS="$TARGETS ysflight32_gl2"; FILES="$FILES main/ysflight32_gl2"; fi
+make -j"$JOBS" $TARGETS
+for f in $FILES; do
   python3 "$RYS_DIR/tools/check-stack-probes.py" "$f"
 done
 echo "built in $WORK/build"

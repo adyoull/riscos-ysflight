@@ -9,6 +9,8 @@
      PROF_SKIP=n        frames before measuring starts (default 300)
      PROF_FRAMES=n      frames measured, then a report and exit (default 300)
      PROF_PPM=file      write the last frame as a PPM
+     PROF_SEED=n        srand(n) before the first frame (default 1), so the
+                        weather and clouds are the same in every run
      PROF_KEYS=list     scripted keys, "frame:key:frames,..." (key = FSKEY_
                         number); the key is held for that many frames
    Under callgrind (--instr-atstart=no) instrumentation is switched on for
@@ -237,6 +239,10 @@ void FsSwapBuffers(void)
 		return;
 	}
 	glFinish();
+	if(0==frame)
+	{
+		srand(NULL!=getenv("PROF_SEED") ? atoi(getenv("PROF_SEED")) : 1);
+	}
 	frame++;
 	if(NULL!=getenv("PROF_VERBOSE"))
 	{

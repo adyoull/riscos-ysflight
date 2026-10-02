@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased: M2 test 5 (2026-10-02)
+
+- **Faster drawing of the sky, ground and solid objects** with software
+  OpenGL (ysce patch 12): the sky/ground background is fogged per vertex
+  and drawn on Mesa's fast path, and blending (which YSFlight leaves on
+  for everything) is off while opaque things are drawn. On the host, with
+  riscos-mesa's renderer: 26% fewer instructions a frame on the runway,
+  33% in the air, the same picture.
+- Profiling: `PROF_SEED` gives every run the same weather, for exact A/B
+  comparisons; host builds use `-DYS_SOFTWARE_GL`.
+
 ## Unreleased: M2 test 4 (2026-10-02)
 
 - **Faster defaults on RISC OS** for a new configuration: particle smoke

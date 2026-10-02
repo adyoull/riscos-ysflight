@@ -30,7 +30,8 @@ for l in libGL.so libGL.so.1 libOSMesa.so.8; do ln -sf "$PROF/mesa/build/src/mes
 ln -sf "$PROF/mesa/build/src/mapi/shared-glapi/libglapi.so.0" gl/libglapi.so.0
 rm -rf src && mkdir src && cp -a "$WORK/YSCE" "$WORK/ysce_public" src/
 cp "$HERE/fsosmesawrapper.cpp" src/ysce_public/src/fssimplewindow/src/glx/fsglxwrapper.cpp
-F="-O2 -g -fno-omit-frame-pointer -fno-delete-null-pointer-checks -I$PROF/mesa/include"
+# -DYS_SOFTWARE_GL: the RISC OS drawing changes (ysce patch 12) on the host too
+F="-O2 -g -fno-omit-frame-pointer -fno-delete-null-pointer-checks -DYS_SOFTWARE_GL -I$PROF/mesa/include"
 cmake -S src/YSCE/src -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_FLAGS="$F" \
   -DCMAKE_CXX_FLAGS="$F" -DCMAKE_EXE_LINKER_FLAGS="-L$PROF/gl -Wl,-rpath,$PROF/gl" >/dev/null
 make -C build -j"$(nproc)" ysflight64_gl1 >/dev/null

@@ -1,0 +1,369 @@
+RISC OS: draw the background and opaque passes the cheap way for software OpenGL.
+
+YSFlight leaves GL_BLEND on for the whole frame and draws the sky/ground
+cylinder and the ground mesh, which cover the whole view, with GL fog. With
+riscos-mesa (software rendering) that sends every pixel through the general
+span path, and blending reads every destination pixel back even when alpha
+is 1. On RISC OS (and in host profiling builds with -DYS_SOFTWARE_GL):
+- FsGroundSky::DrawByFog and the untextured DrawGroundMesh work out the
+  GL_EXP2 fog per vertex into the vertex colours (Mesa does the same per
+  vertex with the fog hint at GL_DONT_CARE) and draw with fog, blending and
+  the always-passing, non-writing depth test off: Mesa's fast smooth-shaded
+  triangles.
+- FsBeginOpaqueDrawing/FsEndOpaqueDrawing (new, graphics/common/fsopengl.h;
+  no-ops in gl2, null and d3d9) switch blending off around the map and the
+  opaque passes of aircraft and ground objects. The map's runway-light
+  quads turn blending on for themselves.
+Measured on the host with riscos-mesa's renderer (callgrind, 640x480,
+particles and ground texture off, same random seed): Misawa runway 237M ->
+175M instructions a frame, 10000 ft 153M -> 102M. The pictures match except
+for rounding (at most a few levels) and depth-buffer ties at the horizon.
+
+For YSCE 231e711, after 08-riscos-title-picture. See docs/PORTING-NOTES.md in riscos-ysflight.
+
+--- a/src/graphics/common/fsopengl.h
++++ b/src/graphics/common/fsopengl.h
+@@ -66,6 +66,13 @@
+ void FsSetPointLight(const YsVec3 &cameraPosition,const YsVec3 &lightPosition,FSENVIRONMENT env);
+ void FsSetDirectionalLight(const YsVec3 &cameraPosition,const YsVec3 &lightDirection,FSENVIRONMENT env);
+ void FsFogOn(const YsColor &fogColor,const double &visibility);
++
++/* Between these two calls the caller draws only opaque things. With
++   software OpenGL (RISC OS) blending is then switched off, because
++   GL_BLEND is left on for the whole frame and blending reads back every
++   pixel even when alpha is 1. Elsewhere they do nothing. */
++void FsBeginOpaqueDrawing(void);
++void FsEndOpaqueDrawing(void);
+ void FsFogOff(void);
+ 
+ void FsBeginRenderShadowMap(const YsMatrix4x4 &projTfm,const YsMatrix4x4 &viewTfm,int texWid,int texHei);
+--- a/src/graphics/gl/fsopengl.cpp
++++ b/src/graphics/gl/fsopengl.cpp
+@@ -389,6 +389,20 @@
+ #endif
+ }
+ 
++void FsBeginOpaqueDrawing(void)
++{
++#if defined(__riscos__) || defined(YS_SOFTWARE_GL)
++	glDisable(GL_BLEND);
++#endif
++}
++
++void FsEndOpaqueDrawing(void)
++{
++#if defined(__riscos__) || defined(YS_SOFTWARE_GL)
++	glEnable(GL_BLEND);
++#endif
++}
++
+ void FsFogOff(void)
+ {
+ #ifdef YSOGLERRORCHECK
+--- a/src/graphics/gl/fsgroundskygl.cpp
++++ b/src/graphics/gl/fsgroundskygl.cpp
+@@ -61,6 +61,40 @@
+ {
+ }
+ 
++#if defined(__riscos__) || defined(YS_SOFTWARE_GL)
++// Per-vertex GL_EXP2 fog worked out here, for the large background
++// polygons (sky cylinder, ground mesh): with GL fog off and the depth test
++// off they take riscos-mesa's fast smooth-shaded triangle path instead of
++// the general one. Mesa itself computes fog per vertex for these (fog hint
++// GL_DONT_CARE), so the picture is the same.
++class FsSoftwareVertexFog
++{
++public:
++	GLfloat mv[16],fogCol[4],density;
++	GLboolean fogOn;
++	FsSoftwareVertexFog()
++	{
++		glGetFloatv(GL_MODELVIEW_MATRIX,mv);
++		glGetFloatv(GL_FOG_COLOR,fogCol);
++		glGetFloatv(GL_FOG_DENSITY,&density);
++		fogOn=glIsEnabled(GL_FOG);
++	}
++	void Colour(float rgb[3],float x,float y,float z,float r,float g,float b) const
++	{
++		float f=1.0F;
++		if(GL_TRUE==fogOn)
++		{
++			const float ez=mv[2]*x+mv[6]*y+mv[10]*z+mv[14];
++			const float t=density*(ez<0.0F ? -ez : ez);
++			f=expf(-t*t);
++		}
++		rgb[0]=f*r+(1.0F-f)*fogCol[0];
++		rgb[1]=f*g+(1.0F-f)*fogCol[1];
++		rgb[2]=f*b+(1.0F-f)*fogCol[2];
++	}
++};
++#endif
++
+ void FsGroundSky::DrawByFog
+     (const YsVec3 &pos,const YsAtt3 &viewAtt,const YsColor &ignd,const YsColor &isky,const YsColor &horizon,
+      const double &farZ,YSBOOL specular)
+@@ -102,48 +136,100 @@
+ 	glTranslated(pos.x(),pos.y(),pos.z());
+ 	glRotated(-YsRadToDeg(att.h()),0.0,1.0,0.0);
+ 
++#if defined(__riscos__) || defined(YS_SOFTWARE_GL)
++	// Software OpenGL (riscos-mesa): this cylinder covers the whole view,
++	// and with GL fog on every pixel goes through Mesa's general span path
++	// with a fog blend. Mesa computes this fog per vertex anyway (the hint
++	// is GL_DONT_CARE), so the same per-vertex fog is worked out here into
++	// the vertex colours and GL fog and the (always-passing, non-writing)
++	// depth test are turned off for it. The cylinder then takes Mesa's
++	// fast smooth-shaded triangle path.
++	YsArray <float> stripVtx;
++	YsArray <float> stripCol;
++	auto Vtx=[&](double x,double y,double z,const YsColor &c)
++	{
++		stripVtx.Append((float)x);
++		stripVtx.Append((float)y);
++		stripVtx.Append((float)z);
++		stripCol.Append((float)c.Rd());
++		stripCol.Append((float)c.Gd());
++		stripCol.Append((float)c.Bd());
++	};
++#define FS_SKYVTX(x,y,z,c) Vtx((x),(y),(z),(c))
++#else
++#define FS_SKYVTX(x,y,z,c) glVertex3d((x),(y),(z))
+ 	glBegin(GL_TRIANGLE_STRIP);
+-
++#endif
++#if !defined(__riscos__) && !defined(YS_SOFTWARE_GL)
+ 	glColor3d(ignd.Rd(),ignd.Gd(),ignd.Bd());
++#endif
+ 	const GLfloat y0=-cylRad*sin(groundFadeAngle);
+ 	const GLfloat z0= cylRad*cos(groundFadeAngle);
+ 
+- 	glVertex3d(x0, 0.0, -cylRad);
+- 	glVertex3d(x1, 0.0, -cylRad);
++ 	FS_SKYVTX(x0, 0.0, -cylRad,ignd);
++ 	FS_SKYVTX(x1, 0.0, -cylRad,ignd);
+ 	for(i=-32; i>=1; i/=2)
+ 	{
+ 		const GLfloat z=cylRad*cos(groundFadeAngle)*(double)i/32.0;
+-		glVertex3d(x0,y0,z);
+-		glVertex3d(x1,y0,z);
++		FS_SKYVTX(x0,y0,z,ignd);
++		FS_SKYVTX(x1,y0,z,ignd);
+ 	}
+ 	for(i=1; i<=32; i*=2)
+ 	{
+ 		const GLfloat z=cylRad*cos(groundFadeAngle)*(double)i/32.0;
+-		glVertex3d(x0,y0,z);
+-		glVertex3d(x1,y0,z);
++		FS_SKYVTX(x0,y0,z,ignd);
++		FS_SKYVTX(x1,y0,z,ignd);
+ 	}
+- 	glVertex3d(x0, 0.0, cylRad);
+- 	glVertex3d(x1, 0.0, cylRad);
++ 	FS_SKYVTX(x0, 0.0, cylRad,ignd);
++ 	FS_SKYVTX(x1, 0.0, cylRad,ignd);
+ 
+ 
++#if !defined(__riscos__) && !defined(YS_SOFTWARE_GL)
+ 	glColor3d(isky.Rd(),isky.Gd(),isky.Bd());
++#endif
+ 	for(i=0; i<nLayer; ++i)
+ 	{
+ 		double a0=(YsPi/2.0)*double(i  )/double(nLayer);
+ 
+-		glVertex3d(x0,cylRad*sin(a0)/10.0,cylRad*(cos(a0)));
+-		glVertex3d(x1,cylRad*sin(a0)/10.0,cylRad*(cos(a0)));
++		FS_SKYVTX(x0,cylRad*sin(a0)/10.0,cylRad*(cos(a0)),isky);
++		FS_SKYVTX(x1,cylRad*sin(a0)/10.0,cylRad*(cos(a0)),isky);
+ 	}
+ 
+ 	for(i=nLayer; 0<=i; --i)
+ 	{
+ 		double a0=(YsPi/2.0)*double(i  )/double(nLayer);
+ 
+-		glVertex3d(x0,cylRad*sin(a0)/10.0,-cylRad*(cos(a0)));
+-		glVertex3d(x1,cylRad*sin(a0)/10.0,-cylRad*(cos(a0)));
++		FS_SKYVTX(x0,cylRad*sin(a0)/10.0,-cylRad*(cos(a0)),isky);
++		FS_SKYVTX(x1,cylRad*sin(a0)/10.0,-cylRad*(cos(a0)),isky);
+ 	}
+ 
++#if defined(__riscos__) || defined(YS_SOFTWARE_GL)
++	{
++		const FsSoftwareVertexFog fog;
++		const YSSIZE_T n=stripVtx.GetN()/3;
++		YsArray <float> col;
++		col.Set(n*3,nullptr);
++		for(YSSIZE_T i=0; i<n; ++i)
++		{
++			const float *v=stripVtx.GetArray()+i*3;
++			const float *c=stripCol.GetArray()+i*3;
++			fog.Colour(&col[i*3],v[0],v[1],v[2],c[0],c[1],c[2]);
++		}
++		glDisable(GL_FOG);
++		glDisable(GL_DEPTH_TEST);
++		glDisable(GL_BLEND);     // opaque; blending would read back every pixel
++		glBegin(GL_TRIANGLE_STRIP);
++		for(YSSIZE_T i=0; i<n; ++i)
++		{
++			glColor3fv(col.GetArray()+i*3);
++			glVertex3fv(stripVtx.GetArray()+i*3);
++		}
++		glEnd();
++	}
++#else
+ 	glEnd();
++#endif
++#undef FS_SKYVTX
+ 
+ 	glFogf(GL_FOG_DENSITY,fogDensity);
+ 	glPopMatrix();
+@@ -354,6 +440,23 @@
+ 
+ 		glColor3ub(255, 255, 255);
+ 
++#if defined(__riscos__) || defined(YS_SOFTWARE_GL)
++		const FsSoftwareVertexFog fog;
++		glDisable(GL_FOG);
++		glDisable(GL_DEPTH_TEST);  // was GL_ALWAYS with no depth writes
++		glDisable(GL_BLEND);       // opaque
++		auto Vertex=[&](int r,int g,int b,int x,int y,int z)
++		{
++			float rgb[3];
++			fog.Colour(rgb,(float)x,(float)y,(float)z,(float)r/255.0F,(float)g/255.0F,(float)b/255.0F);
++			glColor3fv(rgb);
++			glVertex3i(x,y,z);
++		};
++#define FS_GNDVTX(r,g,b,x,y,z) Vertex((r),(g),(b),(x),(y),(z))
++#else
++#define FS_GNDVTX(r,g,b,x,y,z) glColor3ub((r),(g),(b)); glVertex3i((x),(y),(z))
++#endif
++
+ 		for (zp = -nGrid; zp < nGrid; zp++)
+ 		{
+ 			glBegin(GL_QUAD_STRIP);
+@@ -379,8 +482,7 @@
+ 					b = YsBound(b + ((x1 & 31) + (z1 & 31) - 32) * intensity / 32, 0, 255);
+ 				}
+ 
+-				glColor3ub(r, g, b);
+-				glVertex3i(x1, 0, z1);
++				FS_GNDVTX(r, g, b, x1, 0, z1);
+ 
+ 				x2 = xp;
+ 				z2 = zp + 1;
+@@ -398,11 +500,11 @@
+ 					b = YsBound(b + ((x2 & 31) + (z2 & 31) - 32) * intensity / 32, 0, 255);
+ 				}
+ 
+-				glColor3ub(r, g, b);
+-				glVertex3i(x2, 0, z2);
++				FS_GNDVTX(r, g, b, x2, 0, z2);
+ 			}
+ 			glEnd();
+ 		}
++#undef FS_GNDVTX
+ 
+ 
+ 
+--- a/src/graphics/gl2.0/fsopengl2.0.cpp
++++ b/src/graphics/gl2.0/fsopengl2.0.cpp
+@@ -463,6 +463,14 @@
+ #endif
+ }
+ 
++void FsBeginOpaqueDrawing(void)
++{
++}
++
++void FsEndOpaqueDrawing(void)
++{
++}
++
+ void FsFogOn(const YsColor &col,const double &visibility)
+ {
+ #ifdef YSOGLERRORCHECK
+--- a/src/graphics/null/fsnownd.cpp
++++ b/src/graphics/null/fsnownd.cpp
+@@ -93,6 +93,14 @@
+ {
+ }
+ 
++void FsBeginOpaqueDrawing(void)
++{
++}
++
++void FsEndOpaqueDrawing(void)
++{
++}
++
+ void FsFogOn(const YsColor &fogColor,const double &visibility)
+ {
+ }
+--- a/src/graphics/d3d9/fsd3d.cpp
++++ b/src/graphics/d3d9/fsd3d.cpp
+@@ -269,6 +269,14 @@
+ 	}
+ }
+ 
++void FsBeginOpaqueDrawing(void)
++{
++}
++
++void FsEndOpaqueDrawing(void)
++{
++}
++
+ void FsFogOn(const YsColor &col,const double &visibility)
+ {
+ 	auto ysD3dDev=YsD3dDevice::GetCurrent();
+--- a/src/core/fssimulation.cpp
++++ b/src/core/fssimulation.cpp
+@@ -6763,7 +6763,9 @@
+ 	printf("SimDrawScreenZBufferSensitive %d\n",__LINE__);
+ #endif
+ 
++	FsBeginOpaqueDrawing();  // (runway lights turn blending on for themselves)
+ 	SimDrawMap(actualViewMode,proj,0.0,0.0);
++	FsEndOpaqueDrawing();
+ 
+ 	// field.DrawProtectPolygon(actualViewMode.viewPoint,actualViewMode.viewAttitude,proj.GetMatrix(),nearZ);
+ 
+@@ -6787,8 +6789,10 @@
+ 	}
+ 	else
+ 	{
++		FsBeginOpaqueDrawing();
+ 		SimDrawAirplane(actualViewMode,proj,FSVISUAL_DRAWOPAQUE);
+ 		SimDrawGround(actualViewMode,proj,FSVISUAL_DRAWOPAQUE);
++		FsEndOpaqueDrawing();
+ 		bulletHolder.BeginDraw();
+ 		bulletHolder.Draw(
+ 		    cfgPtr->drawCoarseOrdinance,actualViewMode.viewMat,proj.GetMatrix(),cfgPtr->drawTransparentSmoke,smokeTrailType,currentTime,FSVISUAL_DRAWOPAQUE);
+--- a/src/scenery/ysscenerygl.cpp
++++ b/src/scenery/ysscenerygl.cpp
+@@ -536,6 +536,12 @@
+ 				glEnable(GL_TEXTURE_2D);
+ 				//glEnable(GL_BLEND);
+ 				//glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
++#if defined(__riscos__) || defined(YS_SOFTWARE_GL)
++				// The light texture needs blending; the map may be drawn
++				// with blending off (FsBeginOpaqueDrawing).
++				const GLboolean blendWasOn=glIsEnabled(GL_BLEND);
++				glEnable(GL_BLEND);
++#endif
+ 				glTexEnvi(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_MODULATE);
+ 
+ 				commonRwLightTexUnitPtr->Bind();
+@@ -557,6 +563,12 @@
+ 
+ 
+ 				//glDisable(GL_BLEND);
++#if defined(__riscos__) || defined(YS_SOFTWARE_GL)
++				if(GL_TRUE!=blendWasOn)
++				{
++					glDisable(GL_BLEND);
++				}
++#endif
+ 				glDisable(GL_TEXTURE_2D);
+ 			}
+ 			break;

@@ -23,7 +23,11 @@ used.
   frame.
   - Instruction counts are the same from run to run; wall-clock time in a
     shared container is not.
-  - The clouds are placed at random, so expect a few percent of spread.
+  - `PROF_SEED` (default 1) seeds the random numbers before the first
+    frame, so the weather and clouds are the same in every run and two
+    builds can be compared exactly, picture included.
+  - `setup.sh` builds with `-DYS_SOFTWARE_GL`, which turns on the RISC OS
+    drawing changes (ysce patch 12) on the host.
 
 ```
 MESA_TGZ=.../mesa-20.3.5.tar.gz RISCOS_MESA=.../riscos-mesa WORK=.../work tools/profile/setup.sh

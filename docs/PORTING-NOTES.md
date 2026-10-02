@@ -19,6 +19,7 @@ riscos-mesa devkit 20.3.5-11.
 | ysce 09 quiet-formation-autopilot | autopilot/fsformationautopilot.cpp | two debug printf calls on every step | yes |
 | ysce 10 riscos-graphics-defaults | config/fsconfig.cpp | particle smoke/clouds and ground texture off in a new RISC OS config (speed, below) | |
 | ysce 11 riscos-gl2-target | main/CMakeLists.txt | optional OpenGL 2 (GLSL) game, to compare (GL2=1) | |
+| ysce 12 riscos-software-gl-drawing | graphics/gl/fsgroundskygl.cpp, fsopengl.*, core/fssimulation.cpp, scenery/ysscenerygl.cpp (+ no-ops in gl2/null/d3d9) | sky/ground drawn with per-vertex fog and no blend; blending off for the opaque passes (speed, below) | maybe (as an option) |
 | ysce_public 01 unaligned-stl | ysclass/src/ysshellstl.cpp | unaligned float load in binary STL | yes |
 | ysce_public 02 thread-fixes | ysclass11/src/ysthreadpool.cpp, ysport/src/ysthread.cpp | missing `<cstdio>`; `RunParallel` joined one thread too many | yes |
 | ysce_public 03 riscos-cmake | yssimplesound, ysgl CMakeLists | silent sound for now; no GLSL host tools when cross-compiling | |
@@ -136,6 +137,20 @@ Per frame at 640x480, F-18E, Aomori field:
   (FsGroundSky::DrawByFog, untextured, `_swrast_fog_rgba_span` 16%),
   the ground mesh, scenery, about 7 clears a frame. Smaller render size
   (`YSFlight$Render`) scales it down.
+- **Hot paths in the gl1 code (M2 test 5, ysce 12):** with particles and
+  the ground texture off, the full-screen sky cylinder (FsGroundSky::DrawByFog)
+  and the ground mesh were drawn with GL fog (general span path) and, like
+  everything, with GL_BLEND on: YSFlight enables blending once at start-up
+  and never turns it off, so every opaque pixel was read back and blended
+  (`_swrast_get_dest_rgba` + `blend_transparency_ubyte` were ~22% of a frame
+  at 10000 ft). Now the background takes per-vertex fog colours with fog,
+  blending and depth test off (Mesa's `smooth_rgba_triangle`), and blending
+  is off around the map and the opaque aircraft/ground passes. Same seed
+  (PROF_SEED) A/B: runway 237M -> 175M, 10000 ft 153M -> 102M; pictures
+  match to rounding, plus depth-buffer ties (16-bit depth) at the horizon.
+  Left: fog spans on objects (~9%), Mesa's per-vertex colour-material update
+  (~10%, `update_materials`: the shells are drawn with per-vertex colours
+  and GL_COLOR_MATERIAL), span packing (~10%), clears.
 - **OpenGL 2 (GLSL) build, for comparison (ysce 11):** same runway frame,
   12161M instructions (gl1: 603M) and 1556 ms a frame natively on the
   host against 86 ms: about 20 times slower. 80% is Mesa's GLSL

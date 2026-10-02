@@ -5,3 +5,6 @@
 05-riscos-paths.patch
 06-riscos-platform.patch
 07-main-entry.patch
+08-riscos-title-picture.patch
+09-quiet-formation-autopilot.patch
+10-riscos-graphics-defaults.patch

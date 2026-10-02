@@ -1,0 +1,80 @@
+Menu background picture: scale it once, and on RISC OS load one per session.
+
+FsDrawTitleBmp scaled the 1920x990 title picture to the window on every
+redraw of the menu; the scaled copy is now kept until the picture or the
+window size changes. On RISC OS the menu also decoded a new title PNG
+every 8 seconds (about a second of CPU on a Pi each time); it now keeps
+the first one.
+Measured on the host with riscos-mesa's renderer (callgrind, 640x480):
+decoding one title PNG is about 1200M instructions; a menu redraw was
+about 130M, of which 65M was the scaling now done once.
+
+For YSCE 231e711. See docs/PORTING-NOTES.md in riscos-ysflight.
+
+diff --git a/src/graphics/gl/fsopengl.cpp b/src/graphics/gl/fsopengl.cpp
+index d713000..70f5bdc 100644
+--- a/src/graphics/gl/fsopengl.cpp
++++ b/src/graphics/gl/fsopengl.cpp
+@@ -824,13 +824,41 @@ void FsDrawTitleBmp(const YsBitmap &bmp,YSBOOL tile)
+ 	bmpWid=bmp.GetWidth();
+ 	bmpHei=bmp.GetHeight();
+ 
+-	YsBitmap scaledBmp;
+-	
+ 	float xScale = (float)wid/(float)bmpWid;
+ 	float yScale = (float)hei/(float)bmpHei;
+ 	float scale = (xScale>yScale ? xScale : yScale);
+ 
+-	scaledBmp.ScaleCopy(bmpWid*scale,bmpHei*scale,bmp);
++	// The scaled copy is kept and only made again when the picture or the
++	// window size changes: scaling a 1920x990 title picture on every redraw
++	// of the menu was most of the menu's time with software OpenGL.
++	static YsBitmap scaledBmp;
++	static const YsBitmap *cachedFrom=nullptr;
++	static const unsigned char *cachedPixels=nullptr;
++	static int cachedSrcW=0,cachedSrcH=0,cachedW=0,cachedH=0;
++	static unsigned int cachedSum=0;
++	unsigned int sum=0;
++	{
++		// A cheap check of the content too: the caller reloads new
++		// pictures into the same YsBitmap.
++		const unsigned char *rgba=bmp.GetRGBABitmapPointer();
++		const long long n=(long long)bmpWid*bmpHei*4;
++		for(long long i=0; i<n; i+=n/61+1)
++		{
++			sum=sum*31+rgba[i];
++		}
++	}
++	if(cachedFrom!=&bmp || cachedPixels!=bmp.GetRGBABitmapPointer() ||
++	   cachedSrcW!=bmpWid || cachedSrcH!=bmpHei || cachedW!=wid || cachedH!=hei || cachedSum!=sum)
++	{
++		scaledBmp.ScaleCopy(bmpWid*scale,bmpHei*scale,bmp);
++		cachedFrom=&bmp;
++		cachedPixels=bmp.GetRGBABitmapPointer();
++		cachedSrcW=bmpWid;
++		cachedSrcH=bmpHei;
++		cachedW=wid;
++		cachedH=hei;
++		cachedSum=sum;
++	}
+ 
+ 
+ 	if(tile==YSTRUE)
+diff --git a/src/ui/fsrunloop.cpp b/src/ui/fsrunloop.cpp
+index 4ab3ae2..e5853bc 100644
+--- a/src/ui/fsrunloop.cpp
++++ b/src/ui/fsrunloop.cpp
+@@ -2363,7 +2363,13 @@ YSBOOL FsRunLoop::RunMenuOneStep(void)
+ 
+ 		if(opt->backPicture==YSTRUE)
+ 		{
++#ifdef __riscos__
++			// RISC OS: one picture per session. Decoding a 1920x990 PNG
++			// takes seconds on a Pi, and was done every 8 seconds.
++			if(lastChangePicture==0)
++#else
+ 			if(lastChangePicture==0 || YsAbs(time(NULL)-lastChangePicture)>8)
++#endif
+ 			{
+ 				int retry;
+ 				titleBmpPtr=NULL;

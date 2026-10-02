@@ -1,0 +1,31 @@
+Formation autopilot: comment out two debug printf calls.
+
+FsFormationAutopilot::MakeDecision printed its state and the distance to
+its position on every step ("MakeDecision 272 INPOSITION" and a number),
+filling the log during the opening demo's formation flying. Like the
+other debug prints in the same file, they are now comments.
+
+For YSCE 231e711. See docs/PORTING-NOTES.md in riscos-ysflight.
+
+diff --git a/src/autopilot/fsformationautopilot.cpp b/src/autopilot/fsformationautopilot.cpp
+index fa23039..eca95d9 100644
+--- a/src/autopilot/fsformationautopilot.cpp
++++ b/src/autopilot/fsformationautopilot.cpp
+@@ -269,7 +269,7 @@ const double FsFormation::GetMinimumAltitude(FsAirplane &air) const
+ 
+ YSRESULT FsFormation::MakeDecision(FsAirplane &air,FsSimulation *sim,const double &dt)
+ {
+-printf("%s %d %s\n",__FUNCTION__,__LINE__,StateToStr(mode));
++// printf("%s %d %s\n",__FUNCTION__,__LINE__,StateToStr(mode));
+ 	flareDispenser.MakeDecision(air,sim,dt);
+ 
+ 	const double defGLimit=GetDefaultGLimit(air);;
+@@ -304,7 +304,7 @@ printf("%s %d %s\n",__FUNCTION__,__LINE__,StateToStr(mode));
+ 		YsVec3 dev;
+ 		air.Prop().GetMatrix().MulInverse(dev,goal,1.0);
+ 
+-printf("%lf\n",dev.GetLength());
++// printf("%lf\n",dev.GetLength());
+ 
+ 		radar=atan2(sqrt(dev.x()*dev.x()+dev.y()*dev.y()),YsAbs(dev.z()));
+ 

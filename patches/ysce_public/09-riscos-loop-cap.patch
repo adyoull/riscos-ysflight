@@ -1,0 +1,29 @@
+RISC OS: at most 100 main-loop passes a second.
+
+A screen that draws little or nothing (the "release the keys" wait before
+a flight, the menu between redraws) went round the loop thousands of times
+a second with no sleep (the Pi log showed 5812 loops in 5 s). If a pass
+takes under 10 ms, FsSleep (Wimp_PollIdle) gives the rest back to the
+desktop. A game frame takes far longer, so flying is not slowed.
+
+For ysce_public 1b13297, after 08-riscos-timing. See docs/PORTING-NOTES.md in riscos-ysflight.
+
+--- a/src/fslazywindow/src/linux_win/fslazywindow.cpp
++++ b/src/fslazywindow/src/linux_win/fslazywindow.cpp
+@@ -191,6 +191,16 @@
+ 			FsSleep(sleepMS-(int)passed);
+ 		}
+ #ifdef __riscos__
++		/* At most 100 loops a second: a screen that draws nothing (e.g.
++		   waiting for the keys to be released before a flight) would
++		   otherwise take all the CPU. A game frame takes far longer. */
++		{
++			long long spent=FsSubSecondTimer()-m0;
++			if(spent<10)
++			{
++				FsSleep((int)(10-spent));
++			}
++		}
+ 		long long m4=FsSubSecondTimer();
+ 		tSleep+=m4-m3;
+ 		if(5000<=m4-tReport && 0<nFrame)

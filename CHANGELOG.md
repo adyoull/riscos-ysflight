@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased: M2 test 4 (2026-10-02)
+
+- **Faster defaults on RISC OS** for a new configuration: particle smoke
+  and clouds off, ground texture off (ysce patch 10). Measured on
+  riscos-mesa's renderer: 2.6x fewer instructions per frame on the runway,
+  3.6x in the air. An existing `flight.cfg` keeps its settings: untick
+  "Draw Burning Smoke by Particles" (Option > Config, Graphics tab) and
+  "Use Ground Texture" (OpenGL tab).
+- Menu: the background picture is scaled once instead of on every redraw,
+  and on RISC OS one picture is kept for the session instead of decoding a
+  new 1920x990 PNG every 8 seconds (ysce patch 08).
+- At most 100 main-loop passes a second, so screens that draw nothing don't
+  take all the CPU (ysce_public patch 09).
+- No more "MakeDecision ... INPOSITION" lines in the log (ysce patch 09).
+- `tools/profile/`: host profiling with riscos-mesa's Mesa.
+
 ## Unreleased: M2 test 3 (2026-10-02)
 
 - Timing: every 5 seconds the log gets a line with the time per loop spent

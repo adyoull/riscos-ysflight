@@ -15,6 +15,9 @@ riscos-mesa devkit 20.3.5-11.
 | ysce 05 riscos-paths | filename/fsfilename.cpp | user files in `<Choices$Write>.YSFlight` | |
 | ysce 06 riscos-platform | platform/riscos/ | platform library without X11/dlopen | |
 | ysce 07 main-entry | main/fsmain.cpp, main_consvr/fsmainsvr.cpp | install the crash report; console lists exit instead of waiting in the menu | the list part |
+| ysce 08 riscos-title-picture | graphics/gl/fsopengl.cpp, ui/fsrunloop.cpp | menu picture scaled once; on RISC OS one picture per session (a PNG decode is ~1 s on a Pi) | the scaling part |
+| ysce 09 quiet-formation-autopilot | autopilot/fsformationautopilot.cpp | two debug printf calls on every step | yes |
+| ysce 10 riscos-graphics-defaults | config/fsconfig.cpp | particle smoke/clouds and ground texture off in a new RISC OS config (speed, below) | |
 | ysce_public 01 unaligned-stl | ysclass/src/ysshellstl.cpp | unaligned float load in binary STL | yes |
 | ysce_public 02 thread-fixes | ysclass11/src/ysthreadpool.cpp, ysport/src/ysthread.cpp | missing `<cstdio>`; `RunParallel` joined one thread too many | yes |
 | ysce_public 03 riscos-cmake | yssimplesound, ysgl CMakeLists | silent sound for now; no GLSL host tools when cross-compiling | |
@@ -22,6 +25,8 @@ riscos-mesa devkit 20.3.5-11.
 | ysce_public 05 nownd-console | fssimplewindow/src/nownd/fssimplenowindow.cpp | keys via OS_Byte 129; missing `FsCheckWindowOpen` | the fix |
 | ysce_public 06 riscos-window | fssimplewindow/src/riscos/, its CMakeLists | the game window: Wimp + riscos-mesa EGL (below) | |
 | ysce_public 07 riscos-bitmap-font | yssystemfont/src/riscos/, its CMakeLists | GUI text with YSFlight's bitmap fonts until a FontManager version | |
+| ysce_public 08 riscos-timing | fslazywindow/src/linux_win/fslazywindow.cpp | time per loop (poll, simulation, draw, swap, sleep) in the log every 5 s | |
+| ysce_public 09 riscos-loop-cap | fslazywindow/src/linux_win/fslazywindow.cpp | at most 100 loop passes a second (a screen drawing nothing took all the CPU) | |
 
 ## Build set-up
 
@@ -105,3 +110,30 @@ design. Taken from riscos-mesa's freeglut back end and the other ports:
 - Loading a flight doesn't poll the Wimp, so the desktop pauses while a
   map loads (OpenTTD/Warzone lesson: poll every 50 ms during loading).
 - Joystick: null. Server list: compiled out.
+
+## Speed (M2 test 4)
+
+Profiled like Warzone 2100: the game built for Linux with a headless
+fssimplewindow on riscos-mesa's own patched Mesa (OSMesa, BGRA, 16-bit
+depth, GL_FASTEST), instructions counted with callgrind (`tools/profile/`).
+Per frame at 640x480, F-18E, Aomori field:
+
+| Settings | Misawa runway | 10000 ft |
+|---|---|---|
+| upstream defaults | 603M | 527M |
+| particles off ("Draw Burning Smoke by Particles") | 358M | 192M |
+| and shadows off | 343M | 186M |
+| and ground texture off | 228M | 147M |
+| Pi test 2 log, owner's settings | draw 61-111 ms | |
+
+- The particle clouds (many overlapping blended sprites) were 40-64% of the
+  frame. With particles off the clouds are drawn as solid shapes.
+- Textures already meet riscos-mesa's fast-path checklist (RGBA8, power of
+  two, GL_REPEAT and equal filters at bind time, GL_MODULATE, one unit, no
+  separate specular, GL_FASTEST): `persp_textured_triangle` is used.
+- What's left is mostly pixels: the fogged sky/ground cylinder
+  (FsGroundSky::DrawByFog, untextured, `_swrast_fog_rgba_span` 16%),
+  the ground mesh, scenery, about 7 clears a frame. Smaller render size
+  (`YSFlight$Render`) scales it down.
+- The menu redecoded a 1920x990 title PNG every 8 s (~1200M instructions)
+  and rescaled it on every redraw: ysce 08.

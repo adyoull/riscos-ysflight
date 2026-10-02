@@ -23,6 +23,11 @@ keyboard.
 Speed: software OpenGL draws every pixel with the processor, so a
 smaller window, or a smaller picture stretched to the window, is
 faster. See the YSFlight$Size and YSFlight$Render lines in !Run.
+The two costliest options are off in a new RISC OS configuration:
+"Draw Burning Smoke by Particles" (Option > Config, Graphics tab; it
+also draws the clouds as particles) and "Use Ground Texture" (OpenGL
+tab). A configuration saved by an earlier test build keeps its own
+values, so untick them there.
 
 ServerTests (in !YSFlight) runs the console server tests in a task
 window; they write to !YSFlight.Logs.

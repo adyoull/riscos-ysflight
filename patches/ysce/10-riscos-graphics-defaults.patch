@@ -1,0 +1,33 @@
+RISC OS: particle smoke/clouds and the ground texture off by default.
+
+The defaults for a new configuration only; flight.cfg keeps what the user
+chose. Both are in the configuration dialog ("Draw Burning Smoke by
+Particles", which also draws the clouds as particles, and "Use Ground
+Texture"). Measured on riscos-mesa's renderer at 640x480, F-18 at Misawa
+runway / at 10000 ft: 603M / 527M instructions a frame with the upstream
+defaults, 358M / 192M without particles, 228M / 147M also without the
+ground texture.
+
+For YSCE 231e711. See docs/PORTING-NOTES.md in riscos-ysflight.
+
+diff --git a/src/config/fsconfig.cpp b/src/config/fsconfig.cpp
+index efdc62e..ba3aa67 100644
+--- a/src/config/fsconfig.cpp
++++ b/src/config/fsconfig.cpp
+@@ -91,6 +91,16 @@ void FsFlightConfig::SetDefault(void)
+ 
+ 	aircraftReliability=95;
+ 	aircraftTroubleFrequency=0.1;
++
++#ifdef __riscos__
++	// RISC OS draws with software OpenGL. Measured on riscos-mesa's
++	// renderer at 640x480 (instructions per frame, F-18 at Misawa / in the
++	// air): particle clouds and smoke are 40% / 64% of the frame, the
++	// ground texture 33% / 21% of what is left. Both can be turned back on
++	// in the configuration dialog.
++	useParticle=YSFALSE;
++	useOpenGlGroundTexture=YSFALSE;
++#endif
+ }
+ 
+ void FsFlightConfig::SetDetailedMode(void)

@@ -25,7 +25,12 @@ set(CMAKE_RANLIB       ${RISCOS_TOOLCHAIN}/bin/arm-riscos-gnueabihf-ranlib CACHE
 # Same flags as the devkit examples. -fstack-clash-protection is essential.
 # RISCOS_EXTRA_FLAGS: added by build.sh (-ffile-prefix-map). Don't pass
 # CMAKE_C_FLAGS/CMAKE_CXX_FLAGS on the command line: they replace these.
-set(RISCOS_FLAGS "-mfpu=vfpv3 -mfloat-abi=hard -fstack-clash-protection -I${RISCOS_DEVKIT}/include ${RISCOS_EXTRA_FLAGS}")
+# -fno-delete-null-pointer-checks: YSFlight's older classes (YsList and
+# others, 32 places) call member functions on null pointers and test
+# this==NULL inside. GCC 6 and later assume this is never null and delete
+# those tests, so an empty list crashed (abort on data transfer at &004065C4
+# in YsList<YsSwordPolygon>::Append, Pi, M2 test 1). This flag keeps them.
+set(RISCOS_FLAGS "-mfpu=vfpv3 -mfloat-abi=hard -fstack-clash-protection -fno-delete-null-pointer-checks -I${RISCOS_DEVKIT}/include ${RISCOS_EXTRA_FLAGS}")
 set(CMAKE_C_FLAGS_INIT   "${RISCOS_FLAGS}")
 set(CMAKE_CXX_FLAGS_INIT "${RISCOS_FLAGS}")
 set(CMAKE_EXE_LINKER_FLAGS_INIT "-static -L${RISCOS_DEVKIT}/lib")

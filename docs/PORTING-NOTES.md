@@ -32,7 +32,11 @@ riscos-mesa devkit 20.3.5-11.
   `riscos-rules.cmake` (CMAKE_USER_MAKE_RULES_OVERRIDE) clears it; setting
   policy CMP0065's default doesn't work, as the project asks for CMake 3.2.
 - Flags: `-mfpu=vfpv3 -mfloat-abi=hard -fstack-clash-protection`, plus
-  `-ffile-prefix-map` so no build paths end up in the programs.
+  `-ffile-prefix-map` so no build paths end up in the programs, and
+  **`-fno-delete-null-pointer-checks`**: YSFlight's older classes (YsList etc.,
+  32 places) call methods on null pointers and test `this==NULL`; GCC 6+
+  deletes those tests (M2 test 1 crashed in `YsList::Append`). Worth telling
+  upstream: their GCC/Clang Linux builds are exposed too.
 - Programs ship as Absolute files (`elf2aif -e`); `!Run` must give a slot that
   holds the whole image (~6 MB for the console server). The first Pi test
   stopped with "Wimpslot not big enough to run ELF program" in a 1 MB task

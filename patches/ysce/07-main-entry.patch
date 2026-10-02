@@ -3,7 +3,8 @@ Program entry points: RISC OS crash report; console lists exit.
 - RISC OS: call YsRiscOsInstallErrorReport() (ysce_public patch 04) first
   thing in the game (BeforeEverything) and the console server (main), so a
   data abort or RISC OS error writes "RISC OS error &...: ..." and a
-  backtrace to stderr.
+  backtrace to stderr. The game first sends stdout and stderr to the file
+  named by YSFlight$Log (YsRiscOsRedirectOutput).
 - Console server: when asked only for a list (-listairplane, -listfield,
   -liststartpos), exit after printing it instead of waiting in the console
   menu for a key. With the output redirected to a file the menu can't be
@@ -12,14 +13,15 @@ Program entry points: RISC OS crash report; console lists exit.
 For YSCE 231e711. See docs/PORTING-NOTES.md in riscos-ysflight.
 
 diff --git a/src/main/fsmain.cpp b/src/main/fsmain.cpp
-index 4ef75f4..ccb100b 100644
+index 4ef75f4..a1629b6 100644
 --- a/src/main/fsmain.cpp
 +++ b/src/main/fsmain.cpp
-@@ -117,6 +117,9 @@ FsLazyWindowApplication::FsLazyWindowApplication()
+@@ -117,6 +117,10 @@ FsLazyWindowApplication::FsLazyWindowApplication()
  
  /* virtual */ void FsLazyWindowApplication::BeforeEverything(int ac,char *av[])
  {
 +#ifdef __riscos__
++	YsRiscOsRedirectOutput("YSFlight$Log");
 +	YsRiscOsInstallErrorReport();
 +#endif
  	printf("YSFLIGHT\n");

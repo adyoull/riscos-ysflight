@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased: M2 test 2 (2026-10-02)
+
+- **Crash at the opening demo fixed**: built with
+  `-fno-delete-null-pointer-checks`. YSFlight's older classes (YsList and
+  others) call methods on null pointers and test `this==NULL` inside; GCC 6
+  and later delete those tests. Test 1 aborted at &004065C4 in
+  `YsList<YsSwordPolygon>::Append` as soon as the demo started.
+- Only the game writes to `YSFlight$Log`; the console server (and
+  `ServerTests`, which unsets it) no longer overwrite the game's log.
+
 ## Unreleased: M2 test 1 (2026-10-02)
 
 - **The game in a desktop window**: fssimplewindow back end for RISC OS

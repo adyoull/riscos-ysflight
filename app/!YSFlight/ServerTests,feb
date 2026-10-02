@@ -8,4 +8,6 @@ RMEnsure ARMEABISupport 0 IfThere System:Modules.ARMEABISupport Then RMLoad Syst
 RMEnsure ARMEABISupport 0 Error YSFlight needs the ARMEABISupport module. Install it with PackMan.
 RMEnsure PThreadTicker 0.01 IfThere System:Modules.PThrTicker Then RMLoad System:Modules.PThrTicker
 RMEnsure PThreadTicker 0.01 RMLoad <YSFlight$Dir>.PThrTicker
+| The game's !Run sets YSFlight$Log (variables are global): not ours.
+Unset YSFlight$Log
 TaskWindow "Obey <YSFlight$Dir>.Tests.ServerRun" -wimpslot 16384K -name "YSFlight server tests"

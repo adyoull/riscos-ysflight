@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased: M2 test 1 (2026-10-02)
+
+- **The game in a desktop window**: fssimplewindow back end for RISC OS
+  (Wimp window, riscos-mesa EGL; ysce_public patch 06). Held keys by
+  OS_Byte 121 with a tap latch, clicks with their own positions, wheel,
+  full screen as a borderless window, EX0 EY0, `YSFlight$Size` and
+  `YSFlight$Render`, Wimp_PollIdle sleeps, desktop shutdown handling.
+- **GUI text** with YSFlight's bitmap fonts (ysce_public patch 07): the
+  menus were blank with the null font.
+- `!Run` starts the game; the console server is `Server`, its tests
+  `ServerTests`. Messages go to `<Wimp$ScrapDir>.YSFlightLog`
+  (`YSFlight$Log`, opened once for stdout and stderr).
+- riscos-mesa devkit 20.3.5-11.
+- Host test of the window code: `tests/host-window/run.sh`.
+
 ## Unreleased: M1 test 3 (2026-10-01)
 
 - The console server exits after printing a list (-listairplane,

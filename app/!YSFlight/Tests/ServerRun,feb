@@ -1,4 +1,4 @@
-| YSFlight M1 tests. Started by !Run in a task window.
+| The console server tests (started by !YSFlight.ServerTests in a task window).
 | Each run's output appears in this window (save it from the window's
 | menu). Its error output (stderr: messages, and the crash report with the
 | RISC OS error and a backtrace) goes to a file in <YSFlight$Dir>.Logs.
@@ -6,22 +6,22 @@
 | arguments, which Run alone doesn't. Time prints the clock between steps.
 WimpSlot -min 16384K
 CDir <YSFlight$Dir>.Logs
-Echo YSFlight M1 tests. Each list should take seconds, not minutes.
+Echo YSFlight console server tests. Each list should take seconds, not minutes.
 Time
 Echo 1/4 Aircraft list (88)...
-Do Run <YSFlight$Dir>.!RunImage -listairplane 2><YSFlight$Dir>.Logs.AircraftE
+Do Run <YSFlight$Dir>.Server -listairplane 2><YSFlight$Dir>.Logs.AircraftE
 Time
 Echo 2/4 Field list (18)...
-Do Run <YSFlight$Dir>.!RunImage -listfield 2><YSFlight$Dir>.Logs.FieldsE
+Do Run <YSFlight$Dir>.Server -listfield 2><YSFlight$Dir>.Logs.FieldsE
 Time
 Echo 3/4 Start positions on Aomori (36)...
-Do Run <YSFlight$Dir>.!RunImage -liststartpos AOMORI 2><YSFlight$Dir>.Logs.AomoriE
+Do Run <YSFlight$Dir>.Server -liststartpos AOMORI 2><YSFlight$Dir>.Logs.AomoriE
 Time
 Echo 4/4 Start positions on Hawaii (56)...
-Do Run <YSFlight$Dir>.!RunImage -liststartpos HAWAII 2><YSFlight$Dir>.Logs.HawaiiE
+Do Run <YSFlight$Dir>.Server -liststartpos HAWAII 2><YSFlight$Dir>.Logs.HawaiiE
 Time
 Echo Now the server: it loads a map and flies AI traffic, with 4 threads.
 Echo After "Ready to go!" leave it a few minutes, then press Escape.
-Do Run <YSFlight$Dir>.!RunImage -server pi 2><YSFlight$Dir>.Logs.ServerE
+Do Run <YSFlight$Dir>.Server -server pi 2><YSFlight$Dir>.Logs.ServerE
 Time
 Echo Finished. Please save this window's text and send it with !YSFlight.Logs.

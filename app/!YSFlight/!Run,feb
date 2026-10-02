@@ -1,4 +1,4 @@
-| !Run for !YSFlight (M1 test build: the console server, no window yet).
+| !Run for !YSFlight (test build: the game in a desktop window).
 | Lines starting with | are comments.
 Set YSFlight$Dir <Obey$Dir>
 
@@ -12,7 +12,23 @@ RMEnsure ARMEABISupport 0 Error YSFlight needs the ARMEABISupport module. Instal
 | loaded before the program starts.
 RMEnsure PThreadTicker 0.01 IfThere System:Modules.PThrTicker Then RMLoad System:Modules.PThrTicker
 RMEnsure PThreadTicker 0.01 RMLoad <YSFlight$Dir>.PThrTicker
+| A hardware overlay can show the picture (*Set EGL$Overlay on): load
+| ROOL's VideoOverlay module if it's there. YSFlight runs without it.
+RMEnsure VideoOverlay 0.00 IfThere System:Modules.VideoOverlay Then RMLoad System:Modules.VideoOverlay
 
-| The task window's slot must hold the whole program (about 6 MB); the
-| heap goes in dynamic areas ("YSFlight Heap").
-TaskWindow "Obey <YSFlight$Dir>.Tests" -wimpslot 16384K -name "YSFlight M1 tests"
+| Messages go to this file (printing from a desktop program would open
+| a command window). The |< keeps <Wimp$ScrapDir> for UnixLib to expand.
+Set YSFlight$Log /|<Wimp$ScrapDir>/YSFlightLog
+
+| Window size, and the size the picture is drawn at (then stretched to
+| the window). Drawing fewer pixels is much faster with software
+| OpenGL. Take the | off a line to use it.
+Unset YSFlight$Size
+Unset YSFlight$Render
+| Set YSFlight$Size 960x720
+| Set YSFlight$Render 640x480
+
+| The program (about 16 MB) is loaded into the slot; its heap goes in
+| dynamic areas ("YSFlight Heap").
+WimpSlot -min 20480K -max 20480K
+Run <YSFlight$Dir>.!RunImage %*0

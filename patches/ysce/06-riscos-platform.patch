@@ -1,7 +1,7 @@
 RISC OS platform library (platform/riscos).
 
-fsriscos.cpp is platform/linux/fsglx.cpp without the X11/GLX includes; M2
-adds the Wimp/EGL window work here. fsairsoundriscos.cpp is the silent
+fsriscos.cpp is platform/linux/fsglx.cpp without the X11/GLX includes, and
+FsSetNormalWindow returns from full screen (FsUnmaximizeWindow). fsairsoundriscos.cpp is the silent
 platform/nownd sound for now; M3 links the sound and voice plug-ins in
 directly. CMakeLists.txt is platform/linux's without dl.
 
@@ -455,10 +455,10 @@ index 0000000..6ff657f
 +}
 diff --git a/src/platform/riscos/fsriscos.cpp b/src/platform/riscos/fsriscos.cpp
 new file mode 100644
-index 0000000..238948b
+index 0000000..e61c1b2
 --- /dev/null
 +++ b/src/platform/riscos/fsriscos.cpp
-@@ -0,0 +1,295 @@
+@@ -0,0 +1,296 @@
 +/* RISC OS port: copied from platform/linux/fsglx.cpp with the X11/GLX
 +   includes removed. M2 adds the Wimp/EGL window work here. */
 +#include <ysclass.h>
@@ -625,6 +625,7 @@ index 0000000..238948b
 +
 +void FsSetNormalWindow(void)
 +{
++	FsUnmaximizeWindow();
 +}
 +
 +

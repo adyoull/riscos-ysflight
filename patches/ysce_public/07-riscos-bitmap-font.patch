@@ -1,0 +1,277 @@
+RISC OS system font, first version: YSFlight's own bitmap fonts.
+
+The GUI draws all its text (FsGuiObject::defUnicodeRenderer) through
+yssystemfont, so with the null back end the menus and dialogs were blank.
+riscos/ysriscosbitmapsystemfont.cpp makes the same bitmaps as the X11
+version (width rounded to 4; rows from the top, bottom first with reverse;
+1, 16 or 32 bits per pixel) from ysbitmapfont's fixed-width fonts, chosen
+by height. Latin-1 only (other characters are drawn as '?'). A FontManager
+version, with the desktop's fonts, is planned.
+
+For YSCE ysce_public 1b13297. See docs/PORTING-NOTES.md in riscos-ysflight.
+
+diff --git a/src/yssystemfont/src/CMakeLists.txt b/src/yssystemfont/src/CMakeLists.txt
+index 5a560a0..bff28d9 100644
+--- a/src/yssystemfont/src/CMakeLists.txt
++++ b/src/yssystemfont/src/CMakeLists.txt
+@@ -10,6 +10,11 @@ elseif(MSVC)
+ 	set(SRCS windows/yswin32systemfont.cpp)
+ elseif(APPLE)
+ 	set(SRCS macosx/ysmacosxsystemfont.cpp macosx/ysmacosxsystemfont_objc.m)
++elseif(RISCOS)
++	# For now YSFlight's own bitmap fonts (ASCII/Latin-1); a FontManager
++	# version comes later.
++	set(SRCS riscos/ysriscosbitmapsystemfont.cpp)
++	set(LIB_DEPENDENCY ${LIB_DEPENDENCY} ysbitmapfont)
+ elseif(UNIX)
+ 	set(SRCS linux/ysunixsystemfont.cpp)
+ else()
+diff --git a/src/yssystemfont/src/riscos/ysriscosbitmapsystemfont.cpp b/src/yssystemfont/src/riscos/ysriscosbitmapsystemfont.cpp
+new file mode 100644
+index 0000000..3be1678
+--- /dev/null
++++ b/src/yssystemfont/src/riscos/ysriscosbitmapsystemfont.cpp
+@@ -0,0 +1,243 @@
++/* YsSystemFontCache for RISC OS, first version: text drawn with YSFlight's
++   own bitmap fonts (ysbitmapfont, 6x7 to 32x48 pixels) instead of the
++   desktop's fonts, so the menus and dialogs have text before the
++   FontManager version is written (M3). Characters above 255 are drawn as
++   '?' (Latin-1 is covered).
++
++   Bitmaps are made as the Linux (X11) version makes them: the width
++   rounded up to a multiple of 4; rows from the top (bottom first when
++   reverse is YSTRUE); 1 bit per pixel with lines padded to 32 bits, most
++   significant bit on the left; 16 bits = grey, alpha; 32 bits = R, G, B,
++   alpha (alpha 255 for the text, 0 for the background).
++
++   Part of the RISC OS port of YSFlight; same BSD-3 licence as the rest of
++   yssystemfont. */
++
++#include <stdio.h>
++#include <string.h>
++#include "../yssystemfont.h"
++
++extern "C"
++{
++#include <ysglfontdata.h>
++int YsGlWriteStringToSingleBitBitmap(
++    const char str[],
++    unsigned char bmpPtr[],unsigned int bmpWid,unsigned int bmpHei,
++    int bottomLeftX,int bottomLeftY,
++    const unsigned char *const fontPtr[],int fontWid,int fontHei);
++const unsigned char * const *YsGlSelectFontBitmapPointerByHeight(int *selectedWidth,int *selectedHeight,int fontHeight);
++}
++
++class YsSystemFontCache::InternalData
++{
++public:
++	const unsigned char *const *font;
++	int fontWid,fontHei;
++
++	InternalData()
++	{
++		Select(16);
++	}
++	void Select(int height)
++	{
++		font=YsGlSelectFontBitmapPointerByHeight(&fontWid,&fontHei,height);
++	}
++	void Size(const wchar_t str[],unsigned int &wid,unsigned int &hei) const;
++	unsigned char *Bitmap(unsigned int &wid,unsigned int &hei,unsigned int &bytePerLine,
++	                      const wchar_t str[],unsigned int bitPerPixel,
++	                      const unsigned char fgCol[3],const unsigned char bgCol[3],YSBOOL reverse) const;
++};
++
++/* Width (characters of the longest line) and number of lines */
++static void CountText(const wchar_t str[],unsigned int &maxChars,unsigned int &lines)
++{
++	unsigned int n=0;
++	maxChars=0;
++	lines=1;
++	for(int i=0; 0!=str[i]; i++)
++	{
++		if('\n'==str[i])
++		{
++			lines++;
++			n=0;
++		}
++		else if(maxChars<++n)
++		{
++			maxChars=n;
++		}
++	}
++}
++
++void YsSystemFontCache::InternalData::Size(const wchar_t str[],unsigned int &wid,unsigned int &hei) const
++{
++	unsigned int maxChars,lines;
++	CountText(str,maxChars,lines);
++	wid=maxChars*fontWid;
++	hei=lines*fontHei;
++}
++
++unsigned char *YsSystemFontCache::InternalData::Bitmap(
++	unsigned int &wid,unsigned int &hei,unsigned int &dstBytePerLine,
++	const wchar_t str[],unsigned int dstBitPerPixel,
++	const unsigned char fgCol[3],const unsigned char bgCol[3],YSBOOL reverse) const
++{
++	wid=0;
++	hei=0;
++	if(NULL==str || 0==str[0] || (1!=dstBitPerPixel && 16!=dstBitPerPixel && 32!=dstBitPerPixel))
++	{
++		return NULL;
++	}
++	Size(str,wid,hei);
++	wid=(wid+3)/4*4;
++	if(0==wid || 0==hei)
++	{
++		wid=hei=0;
++		return NULL;
++	}
++
++	/* Draw into a 1 bit per pixel bitmap, bottom row first (as the bitmap
++	   font writer does), one line of text at a time */
++	const unsigned int srcBytePerLine=((wid+31)/32)*4;
++	unsigned char *src=new unsigned char [srcBytePerLine*hei];
++	memset(src,0,srcBytePerLine*hei);
++	char line[1024];
++	int nLine=0,n=0;
++	for(int i=0; ; i++)
++	{
++		if(0==str[i] || '\n'==str[i])
++		{
++			line[n]=0;
++			int bottom=(int)hei-(nLine+1)*fontHei;
++			YsGlWriteStringToSingleBitBitmap(line,src,wid,hei,0,bottom,font,fontWid,fontHei);
++			nLine++;
++			n=0;
++			if(0==str[i])
++			{
++				break;
++			}
++		}
++		else if(n<(int)sizeof(line)-1)
++		{
++			wchar_t c=str[i];
++			line[n++]=(char)((0<c && c<256) ? c : '?');
++		}
++	}
++
++	switch(dstBitPerPixel)
++	{
++	case 1:
++		dstBytePerLine=((wid+31)&~31)/8;
++		break;
++	default:
++		dstBytePerLine=wid*dstBitPerPixel/8;
++		break;
++	}
++	unsigned char *dst=new unsigned char [dstBytePerLine*hei];
++	memset(dst,0,dstBytePerLine*hei);
++	for(unsigned int y=0; y<hei; y++)
++	{
++		/* Output rows from the top, unless reverse */
++		const unsigned int srcRow=(YSTRUE!=reverse ? hei-1-y : y);
++		const unsigned char *s=src+srcRow*srcBytePerLine;
++		unsigned char *d=dst+y*dstBytePerLine;
++		for(unsigned int x=0; x<wid; x++)
++		{
++			const int on=(0!=(s[x/8]&(0x80>>(x%8))));
++			switch(dstBitPerPixel)
++			{
++			case 1:
++				if(on)
++				{
++					d[x/8]|=(0x80>>(x%8));
++				}
++				break;
++			case 16:
++				d[x*2  ]=(on ? fgCol[0] : bgCol[0]);
++				d[x*2+1]=(on ? 255 : 0);
++				break;
++			case 32:
++				d[x*4  ]=(on ? fgCol[0] : bgCol[0]);
++				d[x*4+1]=(on ? fgCol[1] : bgCol[1]);
++				d[x*4+2]=(on ? fgCol[2] : bgCol[2]);
++				d[x*4+3]=(on ? 255 : 0);
++				break;
++			}
++		}
++	}
++	delete [] src;
++	return dst;
++}
++
++YsSystemFontCache::YsSystemFontCache()
++{
++	internal=new InternalData;
++}
++
++YsSystemFontCache::~YsSystemFontCache()
++{
++	delete internal;
++}
++
++YSRESULT YsSystemFontCache::RequestDefaultFont(void)
++{
++	internal->Select(16);
++	return YSOK;
++}
++
++YSRESULT YsSystemFontCache::RequestDefaultFontWithHeight(int height)
++{
++	internal->Select(height);
++	return YSOK;
++}
++
++YSRESULT YsSystemFontCache::MakeSingleBitBitmap(YsSystemFontTextBitmap &bmp,const wchar_t wStr[],YSBOOL reverse) const
++{
++	unsigned int wid,hei,bytePerLine;
++	const unsigned char fg[3]={255,255,255},bg[3]={0,0,0};
++	unsigned char *dat=internal->Bitmap(wid,hei,bytePerLine,wStr,1,fg,bg,reverse);
++	if(NULL!=dat)
++	{
++		bmp.SetBitmap(wid,hei,bytePerLine,1,dat);
++		return YSOK;
++	}
++	return YSERR;
++}
++
++YSRESULT YsSystemFontCache::MakeRGBABitmap(YsSystemFontTextBitmap &bmp,const wchar_t wStr[],const unsigned char fgCol[3],const unsigned char bgCol[3],YSBOOL reverse) const
++{
++	unsigned int wid,hei,bytePerLine;
++	unsigned char *dat=internal->Bitmap(wid,hei,bytePerLine,wStr,32,fgCol,bgCol,reverse);
++	if(NULL!=dat)
++	{
++		bmp.SetBitmap(wid,hei,bytePerLine,32,dat);
++		return YSOK;
++	}
++	return YSERR;
++}
++
++YSRESULT YsSystemFontCache::MakeGrayScaleAndAlphaBitmap(YsSystemFontTextBitmap &bmp,const wchar_t wStr[],unsigned char fgColS,unsigned char bgColS,YSBOOL reverse) const
++{
++	const unsigned char fg[3]={fgColS,fgColS,fgColS},bg[3]={bgColS,bgColS,bgColS};
++	unsigned int wid,hei,bytePerLine;
++	unsigned char *dat=internal->Bitmap(wid,hei,bytePerLine,wStr,16,fg,bg,reverse);
++	if(NULL!=dat)
++	{
++		bmp.SetBitmap(wid,hei,bytePerLine,16,dat);
++		return YSOK;
++	}
++	return YSERR;
++}
++
++YSRESULT YsSystemFontCache::GetTightBitmapSize(int &wid,int &hei,const wchar_t str[]) const
++{
++	unsigned int w,h;
++	if(NULL==str || 0==str[0])
++	{
++		wid=hei=0;
++		return YSERR;
++	}
++	internal->Size(str,w,h);
++	wid=(int)w;
++	hei=(int)h;
++	return YSOK;
++}

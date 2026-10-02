@@ -1,32 +1,31 @@
-!YSFlight - M1 test build
-=========================
+!YSFlight - test build
+======================
 
-This is NOT the game yet. It is the YSFlight Community Edition console
-server (no window, no graphics, no sound), built for RISC OS to check that
-the simulator core works: loading the aircraft, maps and start positions,
-and flying the AI traffic.
+YSFlight Community Edition, a free flight simulator, for RISC OS.
+This is an early test build: the game runs in a desktop window, drawn
+with software OpenGL (riscos-mesa). Not done yet: sound, the desktop's
+fonts (the text uses YSFlight's own bitmap font, Latin-1 only), joysticks
+and the online server list.
 
-Needs: SharedUnixLibrary 1.16 or later and ARMEABISupport (PackMan).
+Needs: RISC OS 5 on an ARMv7 machine with VFP (Raspberry Pi 2, 3, 4,
+400), SharedUnixLibrary 1.16 or later and ARMEABISupport (PackMan).
 PThreadTicker 0.03 is included and loaded by !Run.
 
-Double-click !YSFlight. A task window opens and runs, showing the
-output in the window (each list should take seconds):
-  1. the aircraft list        (NAIR:88; 176 is also fine)
-  2. the map list             (NFLD:18; 36 is also fine)
-  3. Aomori start positions   (NSTP:36)
-  4. Hawaii start positions   (NSTP:56)
-  5. the server. It prints "Thread 0 ready." to "Thread 3 ready."
-     (its 4 threads have started), then "Ready to go!", then messages about AI
-     aircraft taxiing and landing. Leave it a few minutes, then press
-     Escape.
-Each step's error output goes to a file in Logs (AircraftE ...
-ServerE). If the program crashes, that file has the RISC OS error and a
-backtrace.
+Double-click !YSFlight to start. Messages, and a report if it crashes,
+go to the file YSFlightLog in the scrap directory
+(<Wimp$ScrapDir>.YSFlightLog). Settings are kept in
+<Choices$Write>.YSFlight.
 
-Settings are saved in <Choices$Write>.YSFlight.
+Keys and mouse: as YSFlight on other systems. Select = left button,
+Menu = middle, Adjust = right. Click in the window to give it the
+keyboard.
 
-Please report: the task window's text (Save from its menu), the files
-in Logs, and any error box, with its exact text.
+Speed: software OpenGL draws every pixel with the processor, so a
+smaller window, or a smaller picture stretched to the window, is
+faster. See the YSFlight$Size and YSFlight$Render lines in !Run.
+
+ServerTests (in !YSFlight) runs the console server tests in a task
+window; they write to !YSFlight.Logs.
 
 This is an unofficial port, not made or supported by the YSCE
 developers. AI (Anthropic's Claude) has been used as a coding assistant.

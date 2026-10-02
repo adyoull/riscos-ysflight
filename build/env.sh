@@ -2,7 +2,7 @@
 # Settings for the riscos-ysflight build scripts. Each can be set first.
 #   RISCOS_TOOLCHAIN  riscos-crossdev toolchain (1.1), with UnixLib 5.0.3.1's
 #                     libunixlib.a installed (see BUILDING.md)
-#   RISCOS_DEVKIT     riscos-mesa devkit (20.3.5-10)
+#   RISCOS_DEVKIT     riscos-mesa devkit (20.3.5-11)
 #   WORK              where the upstream clones and the build go (./work)
 #   YSCE_REF / PUBLIC_REF  upstream commits; =HEAD uses whatever is checked out
 RYS_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)

@@ -9,11 +9,11 @@ Needs a Linux x86-64 host with git, cmake, make, python3 and:
    - the toolchain's UnixLib headers already match 5.0.3.1 (only a comment in
      `sched.h` differs), so they don't need replacing.
    The toolchain's `elf2aif` has the fix for big images.
-2. **riscos-mesa devkit 20.3.5-10** (OSMesa, EGL, GLU; `bin/mkrozip.py`).
+2. **riscos-mesa devkit 20.3.5-11** (OSMesa, EGL, GLU; `bin/mkrozip.py`).
 
 ```
 export RISCOS_TOOLCHAIN=/path/to/riscos-crossdev-toolchain-1.1-x86_64-linux
-export RISCOS_DEVKIT=/path/to/riscos-mesa-devkit-20.3.5-10
+export RISCOS_DEVKIT=/path/to/riscos-mesa-devkit-20.3.5-11
 build/build.sh
 build/package.sh m1-2
 ```
@@ -34,6 +34,14 @@ upstream `runtime/` data and the console server as an Absolute file
 - riscos-crossdev `checks/check-fpu.sh ELF`: no VFPv4 instructions.
 - UnixLib's ticker block: 640 bytes for 5.0.3.1 (riscos-crossdev 1.1's
   `check-unixlib.sh` still expects 472, from 5.0.1-5.0.3).
+
+## Window code test on Linux
+
+`tests/host-window/run.sh` (RCD_DIR = a riscos-crossdev checkout, plus
+RISCOS_DEVKIT and WORK as for the build; needs g++-multilib) builds the
+window back end against riscos-crossdev's fake RISC OS with a scripted
+Wimp, keyboard and pointer, and runs 61 checks. Note: on Ubuntu,
+g++-multilib and g++-arm-linux-gnueabihf can't be installed together.
 
 ## Alignment test on Linux (QEMU)
 

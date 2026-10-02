@@ -7,7 +7,10 @@ ysport for RISC OS.
 - riscos/ysriscoserror.cpp: YsRiscOsInstallErrorReport(). On SIGEMT (a
   data abort and the like) or SIGOSERROR it writes the RISC OS error, which
   UnixLib's own report leaves out, and UnixLib's backtrace to stderr, then
-  _exit(2). Same approach as riscos-openttd's patch 15.
+  _exit(2). Same approach as riscos-openttd's patch 15. If YSFlight$Log is
+  set (the desktop program's !Run), stdout and stderr go to that file,
+  opened once and shared (dup2): printing from a Wimp task would open a
+  command window, and a file can't be opened for writing twice.
 - The rest is the Linux code (UTF-8 encoding, file I/O, timer).
 
 For YSCE ysce_public 1b13297. See docs/PORTING-NOTES.md in riscos-ysflight.
@@ -63,10 +66,10 @@ index 0000000..b11a77a
 +}
 diff --git a/src/ysport/src/riscos/ysriscoserror.cpp b/src/ysport/src/riscos/ysriscoserror.cpp
 new file mode 100644
-index 0000000..1728ae3
+index 0000000..ed2280b
 --- /dev/null
 +++ b/src/ysport/src/riscos/ysriscoserror.cpp
-@@ -0,0 +1,44 @@
+@@ -0,0 +1,67 @@
 +/* RISC OS: report crashes with the RISC OS error and a backtrace.
 +
 +   UnixLib turns a processor exception (a data abort, say) into SIGEMT and a
@@ -74,7 +77,8 @@ index 0000000..1728ae3
 +   out the error itself, which says what happened and where ("abort on data
 +   transfer at &...", which shows whether the fault was in the program or in
 +   a module). This handler writes that error and UnixLib's backtrace of every
-+   thread to stderr (which !Run sends to YSFlightLog), then stops with _exit.
++   thread to stderr, then stops with _exit. It also sends stdout and stderr
++   to the file named by YSFlight$Log, if set (the desktop program).
 +
 +   Same approach as riscos-openttd's patch 15. Part of the RISC OS port of
 +   YSFlight; same BSD-3 licence as the rest of ysport. */
@@ -85,6 +89,7 @@ index 0000000..1728ae3
 +
 +#include <signal.h>
 +#include <stdio.h>
++#include <stdlib.h>
 +#include <unistd.h>
 +#include <kernel.h>
 +#include <unixlib/local.h>
@@ -106,6 +111,27 @@ index 0000000..1728ae3
 +
 +void YsRiscOsInstallErrorReport(void)
 +{
++	/* The desktop program: printing from a Wimp task would open a command
++	   window, so !Run names a log file in YSFlight$Log. The file is opened
++	   once and shared by stdout and stderr (a file can only be open for
++	   writing once on RISC OS: opening it again for stderr fails or
++	   truncates it). */
++	const char *log=getenv("YSFlight$Log");
++	if(NULL!=log && 0!=*log)
++	{
++		FILE *fp=fopen(log,"w");
++		if(NULL!=fp)
++		{
++			fflush(stdout);
++			fflush(stderr);
++			dup2(fileno(fp),1);
++			dup2(fileno(fp),2);
++			fclose(fp);
++			setvbuf(stdout,NULL,_IOLBF,0);
++			setvbuf(stderr,NULL,_IONBF,0);
++		}
++	}
++
 +	signal(SIGEMT,YsRiscOsErrorReport);
 +	signal(SIGOSERROR,YsRiscOsErrorReport);
 +}
@@ -222,16 +248,17 @@ index 0000000..3b6dc6a
 +	return YSERR;
 +}
 diff --git a/src/ysport/src/ysport.h b/src/ysport/src/ysport.h
-index 863569e..a19a97c 100644
+index 863569e..c7347de 100644
 --- a/src/ysport/src/ysport.h
 +++ b/src/ysport/src/ysport.h
-@@ -46,5 +46,11 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+@@ -46,5 +46,12 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  #include "yslocale.h"
  #include "ysopenurl.h"
  
 +#ifdef __riscos__
 +/*! RISC OS: on a data abort (SIGEMT) or RISC OS error (SIGOSERROR), write the
-+    RISC OS error and a backtrace to stderr, then exit. Call first in main(). */
++    RISC OS error and a backtrace to stderr, then exit. If YSFlight$Log is set,
++    also send stdout and stderr to that file. Call first in main(). */
 +void YsRiscOsInstallErrorReport(void);
 +#endif
 +

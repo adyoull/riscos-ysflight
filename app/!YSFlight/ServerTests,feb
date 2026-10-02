@@ -1,0 +1,11 @@
+| YSFlight console server tests: double-click this file. They run in a
+| task window (the console server has no window of its own) and write
+| their files to !YSFlight.Logs.
+Set YSFlight$Dir <Obey$Dir>
+RMEnsure SharedUnixLibrary 1.16 IfThere System:Modules.SharedULib Then RMLoad System:Modules.SharedULib
+RMEnsure SharedUnixLibrary 1.16 Error YSFlight needs SharedUnixLibrary 1.16 or later. Install it with PackMan.
+RMEnsure ARMEABISupport 0 IfThere System:Modules.ARMEABISupport Then RMLoad System:Modules.ARMEABISupport
+RMEnsure ARMEABISupport 0 Error YSFlight needs the ARMEABISupport module. Install it with PackMan.
+RMEnsure PThreadTicker 0.01 IfThere System:Modules.PThrTicker Then RMLoad System:Modules.PThrTicker
+RMEnsure PThreadTicker 0.01 RMLoad <YSFlight$Dir>.PThrTicker
+TaskWindow "Obey <YSFlight$Dir>.Tests.ServerRun" -wimpslot 16384K -name "YSFlight server tests"

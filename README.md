@@ -4,10 +4,10 @@ A port of [YSFlight Community Edition](https://github.com/YSCEDC/YSCE), the
 free flight simulator, to RISC OS 5, using UnixLib (riscos-unixlib 5.0.3.1)
 and the riscos-mesa OpenGL devkit.
 
-**Status: early test builds, not yet a playable game.** The simulator core
-(the console server: aircraft, maps, AI traffic) is built and is being tested
-on a Raspberry Pi. The game window (Wimp + OpenGL through riscos-mesa) comes
-next. See CHANGELOG.md.
+**Status: early test builds.** The simulator core (console server) runs on
+a Raspberry Pi. The game now opens in a desktop window (Wimp + software
+OpenGL through riscos-mesa) and is being tested. No sound yet; text uses
+YSFlight's own bitmap font. See CHANGELOG.md.
 
 This is an unofficial port. It isn't made, endorsed or supported by the YSCE
 developers or by Soji Yamakawa. AI (Anthropic's Claude) has been used as a
@@ -23,8 +23,9 @@ coding assistant on this port.
 ## The test build
 
 Unpack the zip on RISC OS (SparkFS or !InfoZip, so filetypes are kept) and
-double-click `!YSFlight`. A task window runs the tests and writes their
-output to `!YSFlight.Logs`. Settings go in `<Choices$Write>.YSFlight`.
+double-click `!YSFlight`. Messages go to `<Wimp$ScrapDir>.YSFlightLog`;
+settings to `<Choices$Write>.YSFlight`. `!YSFlight.ServerTests` runs the
+console server tests in a task window.
 
 ## This repository
 
@@ -35,6 +36,7 @@ output to `!YSFlight.Logs`. Settings go in `<Choices$Write>.YSFlight`.
 | `build/` | `env.sh`, `build.sh`, `package.sh`, the CMake toolchain files |
 | `app/!YSFlight/` | `!Run`, `!Help`, `Tests`, PThreadTicker |
 | `tools/check-stack-probes.py` | Finds big stack frames without probes |
+| `tests/host-window/` | Host test of the window code against riscos-crossdev's fake RISC OS |
 | `docs/` | PORTING-NOTES.md (every patch and why), LICENSING.md |
 
 Building: BUILDING.md.

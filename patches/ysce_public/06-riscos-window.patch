@@ -1,0 +1,1623 @@
+fssimplewindow for RISC OS: a Wimp window drawn through riscos-mesa EGL.
+
+riscos/fsriscoswrapper.cpp (its header comment has the design) and
+riscos/fsriscoskeymap.cpp; CMake links GLU, EGL and OSMesa from the
+riscos-mesa devkit. Lessons taken from riscos-mesa's freeglut back end and
+the other ports:
+- one Wimp task; FsPollDevice empties the Wimp queue to the first null
+  event every frame; redraws go to eglRedrawWindowRISCOS;
+- FsSleep waits in Wimp_PollIdle (UnixLib's sleeps busy-wait in a Wimp
+  task and would stop the desktop);
+- held keys by an OS_Byte 121 scan while the window has the focus, plus a
+  one-poll latch from Key_Pressed so short taps aren't lost; the physical
+  key of a Key_Pressed is found by the scan (key numbers from SDL's
+  scancodes_riscos.h);
+- presses from Mouse_Click at the click's position, releases and movement
+  from Wimp_GetPointerInfo, the wheel from OS_Pointer 2;
+  Select/Menu/Adjust = left/middle/right;
+- full screen = borderless screen-size window (no mode change); pixels vs
+  OS units (EX0 EY0 modes); YSFlight$Size and YSFlight$Render (render size,
+  EGL_RENDER_*_RISCOS, mouse scaled to it); overlays checked each poll;
+- Message_Quit exits; PreQuit is objected to and treated as the close
+  icon, and a desktop shutdown is restarted (Wimp_ProcessKey &1FC) if the
+  program closes within 30 s; a TaskWindow start is refused with a message;
+- GL_PERSPECTIVE_CORRECTION_HINT GL_FASTEST (swrast fast path);
+- CLOCK_MONOTONIC (UnixLib 5.0.3.1's HAL counter) for FsSubSecondTimer.
+
+For YSCE ysce_public 1b13297. See docs/PORTING-NOTES.md in riscos-ysflight.
+
+diff --git a/src/fssimplewindow/src/CMakeLists.txt b/src/fssimplewindow/src/CMakeLists.txt
+index fa9f318..d507c02 100644
+--- a/src/fssimplewindow/src/CMakeLists.txt
++++ b/src/fssimplewindow/src/CMakeLists.txt
+@@ -9,6 +9,9 @@ if(APPLE)
+ 	set(LIB_DEPENDENCY ${COCOA_LIB} ${OPENGL_LIB})
+ elseif("${CMAKE_SYSTEM_NAME}" STREQUAL "Android")
+ 	set(LIB_DEPENDENCY EGL GLESv2)
++elseif(RISCOS)
++	# riscos-mesa devkit: classic OSMesa behind our EGL 1.4.
++	set(LIB_DEPENDENCY GLU EGL OSMesa z m)
+ elseif(UNIX)
+ 	set(LIB_DEPENDENCY GL GLU X11)
+ else()
+@@ -34,6 +37,12 @@ elseif(APPLE)
+ 		macosx/fsmacosxwrappercpp.cpp
+ 		macosx/fsmacosxwrapperobjc.m
+ 	)
++elseif(RISCOS)
++	# Wimp window + riscos-mesa EGL (riscos/fsriscoswrapper.cpp explains).
++	set(platform_SRCS
++		riscos/fsriscoswrapper.cpp
++		riscos/fsriscoskeymap.cpp
++	)
+ elseif(UNIX)
+ 	set(platform_SRCS
+ 		glx/fsglxkeymap.cpp
+diff --git a/src/fssimplewindow/src/riscos/fsriscoskeymap.cpp b/src/fssimplewindow/src/riscos/fsriscoskeymap.cpp
+new file mode 100644
+index 0000000..0cc5db6
+--- /dev/null
++++ b/src/fssimplewindow/src/riscos/fsriscoskeymap.cpp
+@@ -0,0 +1,138 @@
++/* fssimplewindow for RISC OS: key tables.
++
++   - Internal key numbers (OS_Byte 121, INKEY -n-1) to FSKEY_* codes, for
++     FsGetKeyState (keys held down) and for telling which physical key
++     produced a Key_Pressed event. The numbers are those in SDL 2.26's
++     src/video/riscos/scancodes_riscos.h (zlib licence), which follows the
++     RISC OS "Keyboard Scan Codes" documentation.
++   - Wimp Key_Pressed codes to FSKEY_* codes and characters, for keys that
++     can't be matched to a physical key (typed by software, or auto-repeat).
++
++   Part of the RISC OS port of YSFlight; same BSD-3 licence as the rest of
++   fssimplewindow. */
++
++#include "../fssimplewindow.h"
++#include "fsriscoskeymap.h"
++
++static const unsigned char internalToFskey[128]=
++{
++	/*   0 Shift  */ FSKEY_SHIFT,      /*   1 Ctrl   */ FSKEY_CTRL,
++	/*   2 Alt    */ FSKEY_ALT,        /*   3 LShift */ FSKEY_LEFT_SHIFT,
++	/*   4 LCtrl  */ FSKEY_LEFT_CTRL,  /*   5 LAlt   */ FSKEY_LEFT_ALT,
++	/*   6 RShift */ FSKEY_RIGHT_SHIFT,/*   7 RCtrl  */ FSKEY_RIGHT_CTRL,
++	/*   8 RAlt   */ FSKEY_RIGHT_ALT,  /*   9 Select */ FSKEY_NULL,
++	/*  10 Menu   */ FSKEY_NULL,       /*  11 Adjust */ FSKEY_NULL,
++	/*  12 */ FSKEY_NULL, /*  13 */ FSKEY_NULL, /*  14 */ FSKEY_NULL, /*  15 */ FSKEY_NULL,
++	/*  16 */ FSKEY_Q,      /*  17 */ FSKEY_3,      /*  18 */ FSKEY_4,      /*  19 */ FSKEY_5,
++	/*  20 */ FSKEY_F4,     /*  21 */ FSKEY_8,      /*  22 */ FSKEY_F7,     /*  23 */ FSKEY_MINUS,
++	/*  24 */ FSKEY_6,      /*  25 */ FSKEY_LEFT,   /*  26 */ FSKEY_TEN6,   /*  27 */ FSKEY_TEN7,
++	/*  28 */ FSKEY_F11,    /*  29 */ FSKEY_F12,    /*  30 */ FSKEY_F10,    /*  31 */ FSKEY_SCROLLLOCK,
++	/*  32 */ FSKEY_PRINTSCRN,/*33 */ FSKEY_W,      /*  34 */ FSKEY_E,      /*  35 */ FSKEY_T,
++	/*  36 */ FSKEY_7,      /*  37 */ FSKEY_I,      /*  38 */ FSKEY_9,      /*  39 */ FSKEY_0,
++	/*  40 */ FSKEY_MINUS,  /*  41 */ FSKEY_DOWN,   /*  42 */ FSKEY_TEN8,   /*  43 */ FSKEY_TEN9,
++	/*  44 */ FSKEY_PAUSEBREAK,/*45 */ FSKEY_TILDA, /*  46 */ FSKEY_NULL,   /*  47 */ FSKEY_BS,
++	/*  48 */ FSKEY_1,      /*  49 */ FSKEY_2,      /*  50 */ FSKEY_D,      /*  51 */ FSKEY_R,
++	/*  52 */ FSKEY_6,      /*  53 */ FSKEY_U,      /*  54 */ FSKEY_O,      /*  55 */ FSKEY_P,
++	/*  56 */ FSKEY_LBRACKET,/*57 */ FSKEY_UP,      /*  58 */ FSKEY_TENPLUS,/*  59 */ FSKEY_TENMINUS,
++	/*  60 */ FSKEY_TENENTER,/*61 */ FSKEY_INS,     /*  62 */ FSKEY_HOME,   /*  63 */ FSKEY_PAGEUP,
++	/*  64 */ FSKEY_CAPSLOCK,/*65 */ FSKEY_A,       /*  66 */ FSKEY_X,      /*  67 */ FSKEY_F,
++	/*  68 */ FSKEY_Y,      /*  69 */ FSKEY_J,      /*  70 */ FSKEY_K,      /*  71 */ FSKEY_2,
++	/*  72 */ FSKEY_SEMICOLON,/*73 */ FSKEY_ENTER,  /*  74 */ FSKEY_TENSLASH,/* 75 */ FSKEY_NULL,
++	/*  76 */ FSKEY_TENDOT, /*  77 */ FSKEY_NUMLOCK,/*  78 */ FSKEY_PAGEDOWN,/* 79 */ FSKEY_SINGLEQUOTE,
++	/*  80 */ FSKEY_NULL,   /*  81 */ FSKEY_S,      /*  82 */ FSKEY_C,      /*  83 */ FSKEY_G,
++	/*  84 */ FSKEY_H,      /*  85 */ FSKEY_N,      /*  86 */ FSKEY_L,      /*  87 */ FSKEY_SEMICOLON,
++	/*  88 */ FSKEY_RBRACKET,/*89 */ FSKEY_DEL,     /*  90 */ FSKEY_NULL,   /*  91 */ FSKEY_TENSTAR,
++	/*  92 */ FSKEY_NULL,   /*  93 */ FSKEY_PLUS,   /*  94 */ FSKEY_BACKSLASH,/*95 */ FSKEY_NULL,
++	/*  96 */ FSKEY_TAB,    /*  97 */ FSKEY_Z,      /*  98 */ FSKEY_SPACE,  /*  99 */ FSKEY_V,
++	/* 100 */ FSKEY_B,      /* 101 */ FSKEY_M,      /* 102 */ FSKEY_COMMA,  /* 103 */ FSKEY_DOT,
++	/* 104 */ FSKEY_SLASH,  /* 105 */ FSKEY_END,    /* 106 */ FSKEY_TEN0,   /* 107 */ FSKEY_TEN1,
++	/* 108 */ FSKEY_TEN3,   /* 109 */ FSKEY_NULL,   /* 110 */ FSKEY_NULL,   /* 111 */ FSKEY_NULL,
++	/* 112 */ FSKEY_ESC,    /* 113 */ FSKEY_F1,     /* 114 */ FSKEY_F2,     /* 115 */ FSKEY_F3,
++	/* 116 */ FSKEY_F5,     /* 117 */ FSKEY_F6,     /* 118 */ FSKEY_F8,     /* 119 */ FSKEY_F9,
++	/* 120 */ FSKEY_BACKSLASH,/*121 */ FSKEY_RIGHT, /* 122 */ FSKEY_TEN4,   /* 123 */ FSKEY_TEN5,
++	/* 124 */ FSKEY_TEN2,   /* 125 */ FSKEY_NULL,   /* 126 */ FSKEY_NULL,   /* 127 */ FSKEY_CONTEXT,
++};
++
++int FsRiscOsInternalKeyToFskey(int internal)
++{
++	if(0<=internal && internal<128)
++	{
++		return internalToFskey[internal];
++	}
++	return FSKEY_NULL;
++}
++
++int FsRiscOsWimpKeyToFskey(int code)
++{
++	if('a'<=code && code<='z')
++	{
++		return FSKEY_A+(code-'a');
++	}
++	if('A'<=code && code<='Z')
++	{
++		return FSKEY_A+(code-'A');
++	}
++	if('0'<=code && code<='9')
++	{
++		return FSKEY_0+(code-'0');
++	}
++	switch(code)
++	{
++	case ' ':  return FSKEY_SPACE;
++	case 0x1B: return FSKEY_ESC;
++	case 0x0D: return FSKEY_ENTER;
++	case 0x08: return FSKEY_BS;
++	case 0x7F: return FSKEY_DEL;
++	case 0x1E: return FSKEY_HOME;
++	case '-': case '_':  return FSKEY_MINUS;
++	case '=': case '+':  return FSKEY_PLUS;
++	case '[': case '{':  return FSKEY_LBRACKET;
++	case ']': case '}':  return FSKEY_RBRACKET;
++	case '\\': case '|': return FSKEY_BACKSLASH;
++	case ';': case ':':  return FSKEY_SEMICOLON;
++	case '\'': case '"': return FSKEY_SINGLEQUOTE;
++	case ',': case '<':  return FSKEY_COMMA;
++	case '.': case '>':  return FSKEY_DOT;
++	case '/': case '?':  return FSKEY_SLASH;
++	case '`': case '~':  return FSKEY_TILDA;
++	}
++	if(0x100<=code)
++	{
++		/* Function and cursor keys: Shift adds 0x10, Ctrl 0x20. */
++		int base=code&~0x30;
++		switch(base)
++		{
++		case 0x180: return FSKEY_PRINTSCRN;
++		case 0x181: case 0x182: case 0x183: case 0x184: case 0x185:
++		case 0x186: case 0x187: case 0x188: case 0x189:
++			return FSKEY_F1+(base-0x181);
++		case 0x18A: return FSKEY_TAB;
++		case 0x18B: return FSKEY_END;          /* Copy / End */
++		case 0x18C: return FSKEY_LEFT;
++		case 0x18D: return FSKEY_RIGHT;
++		case 0x18E: return (code&0x10) ? FSKEY_PAGEDOWN : FSKEY_DOWN;
++		case 0x18F: return (code&0x10) ? FSKEY_PAGEUP : FSKEY_UP;
++		case 0x1CA: return FSKEY_F10;
++		case 0x1CB: return FSKEY_F11;
++		case 0x1CC: return FSKEY_F12;
++		case 0x1CD: return FSKEY_INS;
++		}
++	}
++	return FSKEY_NULL;
++}
++
++int FsRiscOsWimpKeyToChar(int code)
++{
++	switch(code)
++	{
++	case 0x1B: return 0x1B;
++	case 0x08: return 0x08;
++	case 0x0D: return '\n';
++	case 0x18A: return '\t';
++	}
++	if((0x20<=code && code<0x7F) || (0xA0<=code && code<0x100))
++	{
++		return code;
++	}
++	return 0;
++}
+diff --git a/src/fssimplewindow/src/riscos/fsriscoskeymap.h b/src/fssimplewindow/src/riscos/fsriscoskeymap.h
+new file mode 100644
+index 0000000..0fc6405
+--- /dev/null
++++ b/src/fssimplewindow/src/riscos/fsriscoskeymap.h
+@@ -0,0 +1,14 @@
++/* fssimplewindow for RISC OS: key tables (see fsriscoskeymap.cpp). */
++#ifndef FSRISCOSKEYMAP_IS_INCLUDED
++#define FSRISCOSKEYMAP_IS_INCLUDED
++
++/* Internal key number (0-127, OS_Byte 121) to FSKEY_*, or FSKEY_NULL. */
++int FsRiscOsInternalKeyToFskey(int internal);
++
++/* Wimp Key_Pressed code to FSKEY_*, or FSKEY_NULL. */
++int FsRiscOsWimpKeyToFskey(int code);
++
++/* Wimp Key_Pressed code to the character FsInkeyChar returns, or 0. */
++int FsRiscOsWimpKeyToChar(int code);
++
++#endif
+diff --git a/src/fssimplewindow/src/riscos/fsriscoswrapper.cpp b/src/fssimplewindow/src/riscos/fsriscoswrapper.cpp
+new file mode 100644
+index 0000000..0a4bd83
+--- /dev/null
++++ b/src/fssimplewindow/src/riscos/fsriscoswrapper.cpp
+@@ -0,0 +1,1398 @@
++/* fssimplewindow for RISC OS: a Wimp window drawn with OpenGL through
++   riscos-mesa's EGL (native window = Wimp window handle).
++
++   Design notes (lessons from riscos-mesa's freeglut back end and the other
++   RISC OS ports):
++
++   - One Wimp task, one window. The program polls (FsPollDevice) every
++     frame; each call empties the Wimp's queue up to the first null event,
++     so other tasks keep running while the game draws.
++   - EGL never calls Wimp_Poll: redraw requests go to eglRedrawWindowRISCOS,
++     which replots the last frame, so the program needn't redraw.
++   - FsSleep waits in Wimp_PollIdle. UnixLib's sleeps busy-wait in a Wimp
++     task (they never call Wimp_Poll), which would stop the whole desktop.
++   - The Wimp reports key presses but not releases. Keys held down come from
++     an OS_Byte 121 scan on every poll (only while the window has the input
++     focus). A key pressed and released between two polls is also reported
++     as held for that one poll (latched from Key_Pressed), so short taps
++     aren't lost at low frame rates.
++   - The Wimp reports clicks but not releases or movement: presses come from
++     Mouse_Click (with the click's own position, so a quick click between
++     two polls isn't lost), releases and movement from Wimp_GetPointerInfo,
++     the wheel from OS_Pointer 2 (Scroll_Request isn't sent on the Pi).
++     Select = left, Menu = middle, Adjust = right (their places on the
++     mouse, as in SDL and freeglut).
++   - Full screen is a borderless window the size of the screen: the program
++     stays a Wimp task and the screen mode is never changed.
++   - Window sizes are in pixels; the Wimp works in OS units (pixels << eig),
++     so EX0 EY0 (180 dpi) modes work. YSFlight$Render (e.g. 640x480) draws
++     at a fixed size and stretches it to the window (EGL_RENDER_*_RISCOS):
++     the program then sees that size, and mouse positions are scaled to it.
++   - Message_Quit exits. Message_PreQuit (desktop shutdown) is objected to
++     and treated as the close icon; if the program then closes within 30
++     seconds the shutdown is restarted (Ctrl-Shift-F12 via Wimp_ProcessKey).
++   - In a TaskWindow the program can't open windows of its own: say so.
++
++   Part of the RISC OS port of YSFlight; same BSD-3 licence as the rest of
++   fssimplewindow. */
++
++#define EGL_EGLEXT_PROTOTYPES 1
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <time.h>
++#include <unistd.h>
++#include <kernel.h>
++#include <swis.h>
++#include <EGL/egl.h>
++#include <EGL/eglext.h>
++#include <EGL/eglext_riscos.h>
++
++#include "../fssimplewindow.h"
++#include "fsriscoskeymap.h"
++
++#ifndef TaskWindow_TaskInfo
++#define TaskWindow_TaskInfo 0x43380
++#endif
++
++#define TASK_WORD 0x4B534154                /* "TASK" */
++#define FLAGS_NORMAL     0xAF000002u        /* moveable; back, close, title, toggle, adjust */
++#define FLAGS_BORDERLESS 0x80000000u        /* full screen */
++#define SHUTDOWN_ANSWER_CS 3000             /* restart a shutdown only within 30 s */
++
++#define SELECT 4
++#define MENU   2
++#define ADJUST 1
++
++/* -- State ------------------------------------------------------------ */
++
++static int task;                            /* Wimp task handle, 0 = none */
++static int wimpWindow;                      /* window handle, 0 = none */
++static int windowOpen;                      /* FsCheckWindowOpen */
++static int fullScreen;
++static int hasFocus;
++static char title[256];
++
++static int xEig=1,yEig=1,screenW=1920,screenH=1080;    /* pixels */
++static int visible[4];                      /* visible area, OS units */
++static int normalPos[4];                    /* x0,y0,w,h (pixels) to go back to */
++static int renderW,renderH;                 /* YSFlight$Render, 0 = window size */
++static int lastW,lastH;                     /* size last reported to the program */
++
++static EGLDisplay eglDpy=EGL_NO_DISPLAY;
++static EGLConfig eglCfg;
++static EGLContext eglCtx=EGL_NO_CONTEXT;
++static EGLSurface eglSurf=EGL_NO_SURFACE;
++
++static int shutdownPending;                 /* PreQuit for a desktop shutdown */
++static int shutdownTime;                    /* when (monotonic cs) */
++
++/* Keys */
++static int fsKeyPress[FSKEY_NUM_KEYCODE];   /* held now (scan) */
++static int fsKeyLatch[FSKEY_NUM_KEYCODE];   /* pressed since the last poll */
++static unsigned char internalHeld[128];     /* internal keys held at the last scan */
++
++#define NKEYBUF 256
++static int keyBuffer[NKEYBUF],nKeyBufUsed;
++static int charBuffer[NKEYBUF],nCharBufUsed;
++
++/* Mouse */
++class FsMouseEventLog
++{
++public:
++	int eventType;
++	int lb,mb,rb;
++	int mx,my;
++};
++static FsMouseEventLog mosBuffer[NKEYBUF];
++static int nMosBufUsed;
++static int lastLb,lastMb,lastRb;            /* buttons as last reported */
++static int lastMx,lastMy;                   /* pointer, program pixels */
++static int lastScreenX=-1,lastScreenY=-1;   /* pointer, OS units */
++static int wheelValid,wheelY;
++
++static int exposure;
++
++/* Clipboard (inside the program only, for fsguilib's text boxes) */
++static char *clipBoard;
++static long long int clipBoardLength;
++
++/* -- Small helpers ---------------------------------------------------- */
++
++static int ModeVar(int var,int fallback)
++{
++	_kernel_swi_regs r;
++	r.r[0]=-1;
++	r.r[1]=var;
++	if(NULL!=_kernel_swi(OS_ReadModeVariable,&r,&r))
++	{
++		return fallback;
++	}
++	return r.r[2];
++}
++
++static void ReadScreen(void)
++{
++	xEig=ModeVar(4,1);
++	yEig=ModeVar(5,1);
++	screenW=ModeVar(11,1919)+1;
++	screenH=ModeVar(12,1079)+1;
++}
++
++static int MonotonicCs(void)
++{
++	_kernel_swi_regs r;
++	_kernel_swi(OS_ReadMonotonicTime,&r,&r);
++	return r.r[0];
++}
++
++static int KeyDown(int internal)
++{
++	return 0xFF==(_kernel_osbyte(121,internal^0x80,0)&0xFF);
++}
++
++static int InTaskWindow(void)
++{
++	_kernel_swi_regs r;
++	r.r[0]=0;
++	return NULL==_kernel_swi(TaskWindow_TaskInfo,&r,&r) && 0!=r.r[0];
++}
++
++/* "WxH" from a system variable */
++static int ReadSizeVar(const char *var,int &w,int &h)
++{
++	const char *s=getenv(var);
++	if(NULL!=s && 2==sscanf(s,"%dx%d",&w,&h) && 16<=w && 16<=h)
++	{
++		return 1;
++	}
++	return 0;
++}
++
++/* The task name: the application directory's name without "!", from the
++   program's path (<YSFlight$Dir>.!RunImage gives "YSFlight"). */
++static void TaskName(char *name,size_t size)
++{
++	const char *dir=getenv("YSFlight$Dir");
++	snprintf(name,size,"YSFlight");
++	if(NULL!=dir)
++	{
++		const char *leaf=strrchr(dir,'.');
++		leaf=(NULL!=leaf ? leaf+1 : dir);
++		if('!'==*leaf)
++		{
++			leaf++;
++		}
++		if(0!=*leaf)
++		{
++			snprintf(name,size,"%s",leaf);
++		}
++	}
++}
++
++/* Program pixels from the visible area */
++static void WindowPixels(int &w,int &h)
++{
++	w=(visible[2]-visible[0])>>xEig;
++	h=(visible[3]-visible[1])>>yEig;
++	if(w<1) w=1;
++	if(h<1) h=1;
++}
++
++static void ProgramSize(int &w,int &h)
++{
++	if(0<renderW && 0<renderH)
++	{
++		w=renderW;
++		h=renderH;
++	}
++	else
++	{
++		WindowPixels(w,h);
++	}
++}
++
++/* Screen position (OS units) to the program's pixel coordinates */
++static void ScreenToProgram(int sx,int sy,int &x,int &y)
++{
++	int ww,wh,pw,ph;
++	WindowPixels(ww,wh);
++	ProgramSize(pw,ph);
++	x=(sx-visible[0])>>xEig;
++	y=(visible[3]-1-sy)>>yEig;
++	if(pw!=ww)
++	{
++		x=x*pw/ww;
++	}
++	if(ph!=wh)
++	{
++		y=y*ph/wh;
++	}
++}
++
++static void ReadVisibleArea(void)
++{
++	int state[9];
++	_kernel_swi_regs r;
++	state[0]=wimpWindow;
++	r.r[1]=(int)state;
++	if(0!=wimpWindow && NULL==_kernel_swi(Wimp_GetWindowState,&r,&r))
++	{
++		memcpy(visible,&state[1],sizeof(visible));
++	}
++}
++
++static void TakeFocus(void)
++{
++	_kernel_swi_regs r;
++	r.r[0]=wimpWindow;
++	r.r[1]=-1;
++	r.r[2]=0;
++	r.r[3]=0;
++	r.r[4]=1<<25;                           /* invisible caret */
++	r.r[5]=-1;
++	_kernel_swi(Wimp_SetCaretPosition,&r,&r);
++}
++
++/* Tell the program about a new size, once. */
++static void CheckResize(void)
++{
++	int w,h;
++	ProgramSize(w,h);
++	if(w!=lastW || h!=lastH)
++	{
++		lastW=w;
++		lastH=h;
++		exposure=1;
++		if(NULL!=fsOnResizeCallBack)
++		{
++			(*fsOnResizeCallBack)(fsOnResizeCallBackParam,w,h);
++		}
++	}
++}
++
++/* -- Window ------------------------------------------------------------ */
++
++static int CreateWimpWindow(int borderless)
++{
++	int wb[23];
++	_kernel_swi_regs r;
++	int sw=screenW<<xEig,sh=screenH<<yEig;
++
++	memset(wb,0,sizeof(wb));
++	wb[2]=64;
++	wb[3]=64;                               /* opened later */
++	wb[6]=-1;
++	wb[7]=(int)(borderless ? FLAGS_BORDERLESS : FLAGS_NORMAL);
++	wb[8]=7|(2<<8)|(7<<16)|(7<<24);         /* work area black: seen only before the first frame */
++	wb[9]=3|(1<<8)|(12<<16);
++	wb[10]=0;
++	wb[11]=-sh;                             /* work area the size of the screen */
++	wb[12]=sw;
++	wb[13]=0;
++	wb[14]=0x07000119;                      /* title: text, centred, indirected */
++	wb[15]=3<<12;                           /* button type: click */
++	wb[16]=1;
++	wb[17]=(64<<xEig)|((64<<yEig)<<16);     /* minimum size */
++	wb[18]=(int)title;
++	wb[19]=-1;
++	wb[20]=sizeof(title);
++	wb[21]=0;
++	r.r[1]=(int)wb;
++	if(NULL!=_kernel_swi(Wimp_CreateWindow,&r,&r))
++	{
++		return 0;
++	}
++	return r.r[0];
++}
++
++/* Open the window with its visible area at x,y (pixels from the screen's
++   top left), w x h pixels; behind -1 = on top. */
++static void OpenWimpWindow(int x,int y,int w,int h,int behind)
++{
++	int block[8];
++	_kernel_swi_regs r;
++	int sh=screenH<<yEig;
++
++	if(w<1) w=1;
++	if(h<1) h=1;
++	block[0]=wimpWindow;
++	block[1]=x<<xEig;
++	block[4]=sh-(y<<yEig);
++	block[3]=block[1]+(w<<xEig);
++	block[2]=block[4]-(h<<yEig);
++	block[5]=0;
++	block[6]=0;
++	block[7]=behind;
++	r.r[1]=(int)block;
++	_kernel_swi(Wimp_OpenWindow,&r,&r);
++	ReadVisibleArea();
++}
++
++static void DeleteWimpWindow(int handle)
++{
++	int block[1];
++	_kernel_swi_regs r;
++	block[0]=handle;
++	r.r[1]=(int)block;
++	_kernel_swi(Wimp_DeleteWindow,&r,&r);
++}
++
++static void CreateSurface(void)
++{
++	EGLint attr[8],n=0;
++	if(0<renderW && 0<renderH)
++	{
++		attr[n++]=EGL_RENDER_WIDTH_RISCOS;
++		attr[n++]=renderW;
++		attr[n++]=EGL_RENDER_HEIGHT_RISCOS;
++		attr[n++]=renderH;
++	}
++	attr[n]=EGL_NONE;
++	eglSurf=eglCreateWindowSurface(eglDpy,eglCfg,(EGLNativeWindowType)wimpWindow,attr);
++	if(EGL_NO_SURFACE==eglSurf)
++	{
++		fprintf(stderr,"eglCreateWindowSurface failed: error %x\n",eglGetError());
++		exit(1);
++	}
++	if(EGL_NO_CONTEXT!=eglCtx)
++	{
++		eglMakeCurrent(eglDpy,eglSurf,eglSurf,eglCtx);
++	}
++}
++
++static void DestroySurface(void)
++{
++	if(EGL_NO_SURFACE!=eglSurf)
++	{
++		eglMakeCurrent(eglDpy,EGL_NO_SURFACE,EGL_NO_SURFACE,EGL_NO_CONTEXT);
++		eglDestroySurface(eglDpy,eglSurf);
++		eglSurf=EGL_NO_SURFACE;
++	}
++}
++
++/* Swap the Wimp window for one with (or without) the title bar and tools,
++   at x,y,w,h pixels. The context is kept; the surface is made again. */
++static void ReplaceWimpWindow(int borderless,int x,int y,int w,int h)
++{
++	int old=wimpWindow,handle=CreateWimpWindow(borderless);
++	if(0==handle)
++	{
++		fprintf(stderr,"Wimp_CreateWindow failed\n");
++		return;
++	}
++	DestroySurface();
++	wimpWindow=handle;
++	OpenWimpWindow(x,y,w,h,-1);
++	CreateSurface();
++	DeleteWimpWindow(old);
++	TakeFocus();
++	CheckResize();
++	exposure=1;
++}
++
++static void EndTask(void)
++{
++	_kernel_swi_regs r;
++	if(0==task)
++	{
++		return;
++	}
++	/* The program closed after objecting to a desktop shutdown: carry on
++	   with the shutdown (Ctrl-Shift-F12), as long as it's recent. */
++	if(0!=shutdownPending && MonotonicCs()-shutdownTime<SHUTDOWN_ANSWER_CS)
++	{
++		r.r[0]=0x1FC;
++		_kernel_swi(Wimp_ProcessKey,&r,&r);
++	}
++	shutdownPending=0;
++	r.r[0]=task;
++	r.r[1]=TASK_WORD;
++	_kernel_swi(Wimp_CloseDown,&r,&r);
++	task=0;
++}
++
++static void AtExit(void)
++{
++	if(EGL_NO_DISPLAY!=eglDpy)
++	{
++		DestroySurface();
++		if(EGL_NO_CONTEXT!=eglCtx)
++		{
++			eglDestroyContext(eglDpy,eglCtx);
++			eglCtx=EGL_NO_CONTEXT;
++		}
++		eglTerminate(eglDpy);
++		eglDpy=EGL_NO_DISPLAY;
++	}
++	EndTask();
++}
++
++static void StartTask(void)
++{
++	/* Message_Quit, Message_PreQuit, Message_ModeChange */
++	static const int messages[]={8,0x400C1,0};
++	_kernel_swi_regs r;
++	char name[64];
++
++	if(0!=task)
++	{
++		return;
++	}
++	if(InTaskWindow())
++	{
++		fprintf(stderr,"YSFlight can't open its window from a task window: "
++		               "start it from the Filer, or with *WimpTask.\n");
++		exit(1);
++	}
++	TaskName(name,sizeof(name));
++	r.r[0]=380;
++	r.r[1]=TASK_WORD;
++	r.r[2]=(int)name;
++	r.r[3]=(int)messages;
++	_kernel_oserror *e=_kernel_swi(Wimp_Initialise,&r,&r);
++	if(NULL!=e)
++	{
++		fprintf(stderr,"Wimp_Initialise failed: %s\n",e->errmess);
++		exit(1);
++	}
++	task=r.r[1];
++	atexit(AtExit);
++}
++
++static void InitEGL(int useDoubleBuffer)
++{
++	EGLint major,minor,n=0;
++	static const EGLint cfgAttr[]=
++	{
++		EGL_SURFACE_TYPE,EGL_WINDOW_BIT,
++		EGL_RENDERABLE_TYPE,EGL_OPENGL_BIT,   /* EGL's default is ES */
++		EGL_RED_SIZE,8,EGL_GREEN_SIZE,8,EGL_BLUE_SIZE,8,
++		EGL_DEPTH_SIZE,16,                    /* as the X11 version asks */
++		EGL_NONE
++	};
++	(void)useDoubleBuffer;                  /* EGL window surfaces are always swapped */
++
++	eglDpy=eglGetDisplay(EGL_DEFAULT_DISPLAY);
++	if(EGL_NO_DISPLAY==eglDpy || EGL_TRUE!=eglInitialize(eglDpy,&major,&minor))
++	{
++		fprintf(stderr,"eglInitialize failed: error %x\n",eglGetError());
++		exit(1);
++	}
++	eglBindAPI(EGL_OPENGL_API);
++	if(EGL_TRUE!=eglChooseConfig(eglDpy,cfgAttr,&eglCfg,1,&n) || n<1)
++	{
++		fprintf(stderr,"eglChooseConfig: no OpenGL configuration (error %x)\n",eglGetError());
++		exit(1);
++	}
++	eglCtx=eglCreateContext(eglDpy,eglCfg,EGL_NO_CONTEXT,NULL);
++	if(EGL_NO_CONTEXT==eglCtx)
++	{
++		fprintf(stderr,"eglCreateContext failed: error %x\n",eglGetError());
++		exit(1);
++	}
++}
++
++void FsOpenWindow(const FsOpenWindowOption &opt)
++{
++	int x0=opt.x0,y0=opt.y0,wid=opt.wid,hei=opt.hei,i;
++
++	for(i=0; i<FSKEY_NUM_KEYCODE; i++)
++	{
++		fsKeyPress[i]=0;
++		fsKeyLatch[i]=0;
++	}
++
++	snprintf(title,sizeof(title),"%s",NULL!=opt.windowTitle ? opt.windowTitle : "Main Window");
++	ReadScreen();
++	StartTask();
++
++	/* YSFlight$Size: the window size; YSFlight$Render: draw at this size
++	   and stretch to the window (faster with software OpenGL). */
++	ReadSizeVar("YSFlight$Size",wid,hei);
++	if(0==ReadSizeVar("YSFlight$Render",renderW,renderH))
++	{
++		renderW=renderH=0;
++	}
++	if(wid>screenW) wid=screenW;
++	if(hei>screenH) hei=screenH;
++	if(x0<0 || x0+wid>screenW) x0=(screenW-wid)/2;
++	if(y0<0 || y0+hei>screenH) y0=(screenH-hei)/2;
++	if(y0<(48>>yEig)) y0=48>>yEig;         /* keep the title bar on the screen */
++	normalPos[0]=x0;
++	normalPos[1]=y0;
++	normalPos[2]=wid;
++	normalPos[3]=hei;
++
++	if(NULL!=fsOpenGLContextCreationCallBack)
++	{
++		(*fsOpenGLContextCreationCallBack)(fsOpenGLContextCreationCallBackParam);
++	}
++
++	InitEGL(opt.useDoubleBuffer);
++
++	wimpWindow=CreateWimpWindow(0);
++	if(0==wimpWindow)
++	{
++		fprintf(stderr,"Wimp_CreateWindow failed\n");
++		exit(1);
++	}
++	OpenWimpWindow(x0,y0,wid,hei,-1);
++	CreateSurface();
++	windowOpen=1;
++	TakeFocus();
++	ProgramSize(lastW,lastH);
++
++	if(opt.sizeOpt==FsOpenWindowOption::FULLSCREEN)
++	{
++		FsMakeFullScreen();
++	}
++	else if(opt.sizeOpt==FsOpenWindowOption::MAXIMIZE_WINDOW)
++	{
++		FsMaximizeWindow();
++	}
++
++	/* Same OpenGL state as the X11 version */
++	int w,h;
++	ProgramSize(w,h);
++	glClearColor(1.0F,1.0F,1.0F,0.0F);
++	glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
++	glFlush();
++
++	glEnable(GL_DEPTH_TEST);
++	glDepthFunc(GL_LEQUAL);
++	glShadeModel(GL_SMOOTH);
++
++	GLfloat dif[]={0.8F,0.8F,0.8F,1.0F};
++	GLfloat amb[]={0.4F,0.4F,0.4F,1.0F};
++	GLfloat spc[]={0.9F,0.9F,0.9F,1.0F};
++	GLfloat shininess[]={50.0,50.0,50.0,0.0};
++
++	glEnable(GL_LIGHTING);
++	glEnable(GL_LIGHT0);
++	glLightfv(GL_LIGHT0,GL_DIFFUSE,dif);
++	glLightfv(GL_LIGHT0,GL_SPECULAR,spc);
++	glMaterialfv(GL_FRONT|GL_BACK,GL_SHININESS,shininess);
++
++	glLightModelfv(GL_LIGHT_MODEL_AMBIENT,amb);
++	glEnable(GL_COLOR_MATERIAL);
++	glEnable(GL_NORMALIZE);
++
++	glClearColor(1.0F,1.0F,1.0F,0.0F);
++	glClearDepth(1.0F);
++	glDisable(GL_DEPTH_TEST);
++
++	glViewport(0,0,w,h);
++
++	glMatrixMode(GL_PROJECTION);
++	glLoadIdentity();
++	glOrtho(0,(float)w-1,(float)h-1,0,-1,1);
++
++	glMatrixMode(GL_MODELVIEW);
++	glLoadIdentity();
++
++	glShadeModel(GL_FLAT);
++	glPointSize(1);
++	glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
++	glColor3ub(0,0,0);
++
++	/* Software rendering: perspective-correct texturing every 16 pixels
++	   and one mipmap level per triangle (riscos-mesa's fast path; the
++	   Warzone 2100 port's lesson). The program can still ask for NICEST. */
++	glHint(GL_PERSPECTIVE_CORRECTION_HINT,GL_FASTEST);
++
++	if(NULL!=fsOpenGLInitializationCallBack)
++	{
++		(*fsOpenGLInitializationCallBack)(fsOpenGLInitializationCallBackParam);
++	}
++	if(NULL!=fsAfterWindowCreationCallBack)
++	{
++		(*fsAfterWindowCreationCallBack)(fsAfterWindowCreationCallBackParam);
++	}
++}
++
++int FsCheckWindowOpen(void)
++{
++	return windowOpen;
++}
++
++void FsResizeWindow(int newWid,int newHei)
++{
++	if(0!=wimpWindow && 0==fullScreen)
++	{
++		int x,y;
++		FsGetWindowPosition(x,y);
++		OpenWimpWindow(x,y,newWid,newHei,-1);
++		CheckResize();
++	}
++}
++
++void FsCloseWindow(void)
++{
++	if(EGL_NO_DISPLAY!=eglDpy)
++	{
++		DestroySurface();
++		if(EGL_NO_CONTEXT!=eglCtx)
++		{
++			eglDestroyContext(eglDpy,eglCtx);
++			eglCtx=EGL_NO_CONTEXT;
++		}
++		eglTerminate(eglDpy);
++		eglDpy=EGL_NO_DISPLAY;
++	}
++	if(0!=wimpWindow)
++	{
++		DeleteWimpWindow(wimpWindow);
++		wimpWindow=0;
++	}
++	windowOpen=0;
++	EndTask();
++	if(NULL!=clipBoard)
++	{
++		delete [] clipBoard;
++		clipBoard=NULL;
++	}
++}
++
++void FsMaximizeWindow(void)
++{
++	/* As big as the screen with the title bar and the icon bar showing */
++	int top=48>>yEig,bottom=(132>>yEig);
++	if(0!=fullScreen)
++	{
++		fullScreen=0;
++		ReplaceWimpWindow(0,0,top,screenW,screenH-top-bottom);
++	}
++	else if(0!=wimpWindow)
++	{
++		OpenWimpWindow(0,top,screenW,screenH-top-bottom,-1);
++		CheckResize();
++	}
++}
++
++void FsUnmaximizeWindow(void)
++{
++	if(0!=fullScreen)
++	{
++		fullScreen=0;
++		ReplaceWimpWindow(0,normalPos[0],normalPos[1],normalPos[2],normalPos[3]);
++	}
++	else if(0!=wimpWindow)
++	{
++		OpenWimpWindow(normalPos[0],normalPos[1],normalPos[2],normalPos[3],-1);
++		CheckResize();
++	}
++}
++
++void FsMakeFullScreen(void)
++{
++	if(0!=wimpWindow && 0==fullScreen)
++	{
++		FsGetWindowPosition(normalPos[0],normalPos[1]);
++		WindowPixels(normalPos[2],normalPos[3]);
++		fullScreen=1;
++		ReplaceWimpWindow(1,0,0,screenW,screenH);
++	}
++}
++
++void FsGetWindowSize(int &wid,int &hei)
++{
++	ProgramSize(wid,hei);
++}
++
++void FsGetWindowPosition(int &x0,int &y0)
++{
++	x0=visible[0]>>xEig;
++	y0=((screenH<<yEig)-visible[3])>>yEig;
++}
++
++void FsSetWindowTitle(const char windowTitle[])
++{
++	_kernel_swi_regs r;
++	snprintf(title,sizeof(title),"%s",windowTitle);
++	if(0!=wimpWindow)
++	{
++		r.r[0]=wimpWindow;
++		r.r[1]=TASK_WORD;
++		r.r[2]=3;                           /* redraw the title bar */
++		_kernel_swi(Wimp_ForceRedraw,&r,&r);
++	}
++}
++
++/* -- Events ------------------------------------------------------------ */
++
++static void PushMouseEvent(int type,int x,int y)
++{
++	if(nMosBufUsed<NKEYBUF)
++	{
++		mosBuffer[nMosBufUsed].eventType=type;
++		mosBuffer[nMosBufUsed].mx=x;
++		mosBuffer[nMosBufUsed].my=y;
++		mosBuffer[nMosBufUsed].lb=lastLb;
++		mosBuffer[nMosBufUsed].mb=lastMb;
++		mosBuffer[nMosBufUsed].rb=lastRb;
++		nMosBufUsed++;
++	}
++}
++
++static void MouseClick(const int *block)
++{
++	int x,y;
++	if(block[3]!=wimpWindow)
++	{
++		return;
++	}
++	if(0==hasFocus)
++	{
++		TakeFocus();
++	}
++	/* Reported at the click's own position: the button may already be up
++	   by the next poll; the release is seen then. */
++	ScreenToProgram(block[0],block[1],x,y);
++	lastMx=x;
++	lastMy=y;
++	lastScreenX=block[0];
++	lastScreenY=block[1];
++	if((block[2]&SELECT) && 0==lastLb)
++	{
++		lastLb=1;
++		PushMouseEvent(FSMOUSEEVENT_LBUTTONDOWN,x,y);
++	}
++	if((block[2]&MENU) && 0==lastMb)
++	{
++		lastMb=1;
++		PushMouseEvent(FSMOUSEEVENT_MBUTTONDOWN,x,y);
++	}
++	if((block[2]&ADJUST) && 0==lastRb)
++	{
++		lastRb=1;
++		PushMouseEvent(FSMOUSEEVENT_RBUTTONDOWN,x,y);
++	}
++}
++
++/* The internal key number of a key now down that wasn't at the last scan,
++   or -1 (scan from 12: past Shift, Ctrl, Alt and the mouse buttons). */
++static int NewlyPressedKey(void)
++{
++	int k=12;
++	while(k<0x80)
++	{
++		int found=_kernel_osbyte(121,k,0)&0xFF;
++		if(found<12 || found>=0x80)
++		{
++			return -1;
++		}
++		if(0==internalHeld[found])
++		{
++			return found;
++		}
++		k=found+1;
++	}
++	return -1;
++}
++
++static void KeyPressed(const int *block)
++{
++	int code=block[6],fskey=FSKEY_NULL,chr,internal;
++	_kernel_swi_regs r;
++
++	internal=NewlyPressedKey();
++	if(0<=internal)
++	{
++		internalHeld[internal]=1;            /* auto-repeat won't find it again */
++		fskey=FsRiscOsInternalKeyToFskey(internal);
++	}
++	if(FSKEY_NULL==fskey)
++	{
++		fskey=FsRiscOsWimpKeyToFskey(code);
++	}
++	chr=FsRiscOsWimpKeyToChar(code);
++	if(KeyDown(1) || KeyDown(2))            /* Ctrl or Alt: no character, as on X11 */
++	{
++		chr=0;
++	}
++
++	if(FSKEY_NULL==fskey && 0==chr)
++	{
++		r.r[0]=code;                        /* not ours: hot keys (F12 and so on) */
++		_kernel_swi(Wimp_ProcessKey,&r,&r);
++		return;
++	}
++	if(FSKEY_NULL!=fskey)
++	{
++		fsKeyLatch[fskey]=1;
++		if(nKeyBufUsed<NKEYBUF)
++		{
++			keyBuffer[nKeyBufUsed++]=fskey;
++		}
++	}
++	if(0!=chr && nCharBufUsed<NKEYBUF)
++	{
++		charBuffer[nCharBufUsed++]=chr;
++	}
++}
++
++static void ObjectToPreQuit(int *block)
++{
++	_kernel_swi_regs r;
++	/* A desktop shutdown if the flags word is missing or bit 0 is clear */
++	int desktop=(block[0]<24 || 0==(block[5]&1));
++	block[3]=block[2];                      /* your_ref = my_ref */
++	r.r[0]=19;                              /* User_Message_Acknowledge: object */
++	r.r[1]=(int)block;
++	r.r[2]=block[1];
++	_kernel_swi(Wimp_SendMessage,&r,&r);
++	if(desktop)
++	{
++		shutdownPending=1;
++		shutdownTime=MonotonicCs();
++	}
++}
++
++static void CloseRequest(void)
++{
++	if(NULL==fsCloseWindowCallBack ||
++	   true==(*fsCloseWindowCallBack)(fsCloseWindowCallBackParam))
++	{
++		windowOpen=0;
++	}
++	else
++	{
++		shutdownPending=0;                  /* the program said no */
++	}
++}
++
++static void ModeChanged(void)
++{
++	ReadScreen();
++	if(0!=fullScreen && 0!=wimpWindow)
++	{
++		OpenWimpWindow(0,0,screenW,screenH,-1);
++	}
++	else
++	{
++		ReadVisibleArea();
++	}
++	CheckResize();
++	exposure=1;
++}
++
++static void HandleEvent(int reason,int *block)
++{
++	_kernel_swi_regs r;
++	switch(reason)
++	{
++	case 1:                                 /* Redraw_Window_Request */
++		if(EGL_NO_DISPLAY==eglDpy || EGL_TRUE!=eglRedrawWindowRISCOS(eglDpy,block))
++		{
++			r.r[1]=(int)block;
++			_kernel_swi(Wimp_RedrawWindow,&r,&r);
++			while(0!=r.r[0])
++			{
++				r.r[1]=(int)block;
++				_kernel_swi(Wimp_GetRectangle,&r,&r);
++			}
++		}
++		break;
++	case 2:                                 /* Open_Window_Request */
++		r.r[1]=(int)block;
++		_kernel_swi(Wimp_OpenWindow,&r,&r);
++		if(block[0]==wimpWindow)
++		{
++			ReadVisibleArea();
++			CheckResize();
++		}
++		break;
++	case 3:                                 /* Close_Window_Request */
++		if(block[0]==wimpWindow)
++		{
++			CloseRequest();
++		}
++		break;
++	case 6:                                 /* Mouse_Click */
++		MouseClick(block);
++		break;
++	case 8:                                 /* Key_Pressed */
++		KeyPressed(block);
++		break;
++	case 11:                                /* Lose_Caret */
++		if(block[0]==wimpWindow)
++		{
++			hasFocus=0;
++		}
++		break;
++	case 12:                                /* Gain_Caret */
++		hasFocus=(block[0]==wimpWindow);
++		break;
++	case 17:                                /* User_Message */
++	case 18:                                /* User_Message_Recorded */
++		switch(block[4])
++		{
++		case 0:                             /* Message_Quit: must exit */
++			exit(0);
++			break;
++		case 8:                             /* Message_PreQuit */
++			if(18==reason)
++			{
++				ObjectToPreQuit(block);
++			}
++			CloseRequest();
++			break;
++		case 0x400C1:                       /* Message_ModeChange */
++			ModeChanged();
++			break;
++		}
++		break;
++	}
++}
++
++/* Keys held now: OS_Byte 121 scan, while the window has the input focus.
++   Keys pressed since the last poll count as held for this one poll. */
++static void ScanKeys(void)
++{
++	int i;
++	for(i=0; i<FSKEY_NUM_KEYCODE; i++)
++	{
++		fsKeyPress[i]=fsKeyLatch[i];
++		fsKeyLatch[i]=0;
++	}
++	if(0==hasFocus)
++	{
++		memset(internalHeld,0,sizeof(internalHeld));
++		return;
++	}
++	/* Shift, Ctrl, Alt, each side (internal keys 0-8) */
++	for(i=0; i<=8; i++)
++	{
++		if(KeyDown(i))
++		{
++			fsKeyPress[FsRiscOsInternalKeyToFskey(i)]=1;
++		}
++	}
++	/* The rest: OS_Byte 121 finds the next key down from a number */
++	unsigned char now[128];
++	memset(now,0,sizeof(now));
++	int k=12;
++	while(k<0x80)
++	{
++		int found=_kernel_osbyte(121,k,0)&0xFF;
++		if(found<12 || found>=0x80)
++		{
++			break;
++		}
++		now[found]=1;
++		int fskey=FsRiscOsInternalKeyToFskey(found);
++		if(FSKEY_NULL!=fskey)
++		{
++			fsKeyPress[fskey]=1;
++		}
++		k=found+1;
++	}
++	memcpy(internalHeld,now,sizeof(now));
++}
++
++static void PollPointer(void)
++{
++	int block[5],x,y;
++	_kernel_swi_regs r;
++
++	r.r[1]=(int)block;
++	if(NULL!=_kernel_swi(Wimp_GetPointerInfo,&r,&r))
++	{
++		return;
++	}
++	int over=(block[0]>=visible[0] && block[0]<visible[2] &&
++	          block[1]>=visible[1] && block[1]<visible[3]);
++	int held=lastLb|lastMb|lastRb;
++
++	ScreenToProgram(block[0],block[1],x,y);
++
++	/* Releases */
++	if(0!=lastLb && 0==(block[2]&SELECT))
++	{
++		lastLb=0;
++		PushMouseEvent(FSMOUSEEVENT_LBUTTONUP,x,y);
++	}
++	if(0!=lastMb && 0==(block[2]&MENU))
++	{
++		lastMb=0;
++		PushMouseEvent(FSMOUSEEVENT_MBUTTONUP,x,y);
++	}
++	if(0!=lastRb && 0==(block[2]&ADJUST))
++	{
++		lastRb=0;
++		PushMouseEvent(FSMOUSEEVENT_RBUTTONUP,x,y);
++	}
++
++	/* Movement: over the window, or dragging from it */
++	if((block[0]!=lastScreenX || block[1]!=lastScreenY) && (over || held))
++	{
++		if(0<nMosBufUsed && FSMOUSEEVENT_MOVE==mosBuffer[nMosBufUsed-1].eventType)
++		{
++			mosBuffer[nMosBufUsed-1].mx=x;
++			mosBuffer[nMosBufUsed-1].my=y;
++		}
++		else
++		{
++			PushMouseEvent(FSMOUSEEVENT_MOVE,x,y);
++		}
++	}
++	lastScreenX=block[0];
++	lastScreenY=block[1];
++	if(over || held)
++	{
++		lastMx=x;
++		lastMy=y;
++	}
++
++	/* The wheel: OS_Pointer 2 gives its running count (+ve = up) */
++	r.r[0]=2;
++	if(NULL==_kernel_swi(OS_Pointer,&r,&r))
++	{
++		int dy=r.r[1]-wheelY;
++		wheelY=r.r[1];
++		if(0==wheelValid)
++		{
++			wheelValid=1;
++		}
++		else if(0!=dy && -64<=dy && dy<=64 && over)
++		{
++			int fskey=(0<dy ? FSKEY_WHEELUP : FSKEY_WHEELDOWN),n=(0<dy ? dy : -dy);
++			fsKeyLatch[fskey]=1;
++			while(0<n-- && nKeyBufUsed<NKEYBUF)
++			{
++				keyBuffer[nKeyBufUsed++]=fskey;
++			}
++		}
++	}
++}
++
++void FsPollDevice(void)
++{
++	int block[64],i;
++	_kernel_swi_regs r;
++
++	if(0==task)
++	{
++		return;
++	}
++	/* Everything waiting, up to the first null event (bounded, so a flood
++	   of messages can't keep the program from drawing) */
++	for(i=0; i<64; i++)
++	{
++		r.r[0]=0;
++		r.r[1]=(int)block;
++		if(NULL!=_kernel_swi(Wimp_Poll,&r,&r) || 0==r.r[0])
++		{
++			break;
++		}
++		HandleEvent(r.r[0],block);
++	}
++
++	PollPointer();
++	ScanKeys();
++
++	/* A window shown through a hardware overlay (EGL$Overlay on) must be
++	   told about windows and menus opened over it. */
++	EGLint overlay=0;
++	if(EGL_NO_SURFACE!=eglSurf &&
++	   EGL_TRUE==eglQuerySurface(eglDpy,eglSurf,EGL_OVERLAY_RISCOS,&overlay) && 0!=overlay)
++	{
++		eglCheckOverlaysRISCOS(eglDpy);
++	}
++
++	if(NULL!=fsPollDeviceHook)
++	{
++		(*fsPollDeviceHook)(fsPollDeviceHookParam);
++	}
++}
++
++void FsPushOnPaintEvent(void)
++{
++	exposure=1;
++}
++
++/* Wait without stopping the desktop: Wimp_PollIdle until the time is up,
++   handling events meanwhile. Short waits (under 5 ms) poll once and then
++   wait against the clock. Main thread only (the Wimp); other threads, and
++   the program before its window is open, use usleep. */
++void FsSleep(int ms)
++{
++	if(ms<=0)
++	{
++		return;
++	}
++	if(0==task)
++	{
++		usleep(ms*1000);
++		return;
++	}
++	long long int until=FsSubSecondTimer()+ms;
++	int block[64];
++	_kernel_swi_regs r;
++	for(;;)
++	{
++		long long int left=until-FsSubSecondTimer();
++		if(left<=0)
++		{
++			break;
++		}
++		if(left<5)
++		{
++			r.r[0]=0;
++			r.r[1]=(int)block;
++			if(NULL==_kernel_swi(Wimp_Poll,&r,&r) && 0!=r.r[0])
++			{
++				HandleEvent(r.r[0],block);
++			}
++			while(FsSubSecondTimer()<until)
++			{
++			}
++			break;
++		}
++		r.r[0]=0;
++		r.r[1]=(int)block;
++		r.r[2]=MonotonicCs()+(int)(left/10);
++		if(NULL!=_kernel_swi(Wimp_PollIdle,&r,&r))
++		{
++			break;
++		}
++		if(0!=r.r[0])
++		{
++			HandleEvent(r.r[0],block);
++		}
++	}
++}
++
++long long int FsPassedTime(void)
++{
++	static long long int lastTick;
++	static int first=1;
++	long long int tick=FsSubSecondTimer();
++	if(0!=first)
++	{
++		lastTick=tick;
++		first=0;
++	}
++	long long int passed=tick-lastTick;
++	lastTick=tick;
++	return passed;
++}
++
++/* Milliseconds. UnixLib 5.0.3.1's CLOCK_MONOTONIC reads the HAL counter,
++   so it's finer than the centisecond OS_ReadMonotonicTime. */
++long long int FsSubSecondTimer(void)
++{
++	static long long int t0=-1;
++	struct timespec ts;
++	clock_gettime(CLOCK_MONOTONIC,&ts);
++	long long int ms=(long long int)ts.tv_sec*1000+ts.tv_nsec/1000000;
++	if(t0<0)
++	{
++		t0=ms;
++	}
++	return ms-t0;
++}
++
++void FsGetMouseState(int &lb,int &mb,int &rb,int &mx,int &my)
++{
++	lb=lastLb;
++	mb=lastMb;
++	rb=lastRb;
++	mx=lastMx;
++	my=lastMy;
++}
++
++void FsSetMousePosition(int mx,int my)
++{
++	unsigned char b[5];
++	int ww,wh,pw,ph;
++	WindowPixels(ww,wh);
++	ProgramSize(pw,ph);
++	int x=visible[0]+((mx*ww/pw)<<xEig);
++	int y=visible[3]-1-((my*wh/ph)<<yEig);
++	b[0]=3;                                 /* OS_Word 21,3: set pointer position */
++	b[1]=x&255;
++	b[2]=(x>>8)&255;
++	b[3]=y&255;
++	b[4]=(y>>8)&255;
++	_kernel_osword(21,(int *)b);
++}
++
++int FsGetMouseEvent(int &lb,int &mb,int &rb,int &mx,int &my)
++{
++	if(0<nMosBufUsed)
++	{
++		int eventType=mosBuffer[0].eventType;
++		mx=mosBuffer[0].mx;
++		my=mosBuffer[0].my;
++		lb=mosBuffer[0].lb;
++		mb=mosBuffer[0].mb;
++		rb=mosBuffer[0].rb;
++		nMosBufUsed--;
++		memmove(mosBuffer,mosBuffer+1,nMosBufUsed*sizeof(mosBuffer[0]));
++		return eventType;
++	}
++	FsGetMouseState(lb,mb,rb,mx,my);
++	return FSMOUSEEVENT_NONE;
++}
++
++void FsSwapBuffers(void)
++{
++	if(NULL!=fsSwapBuffersHook && true==(*fsSwapBuffersHook)(fsSwapBuffersHookParam))
++	{
++		return;
++	}
++	if(EGL_NO_SURFACE!=eglSurf)
++	{
++		eglSwapBuffers(eglDpy,eglSurf);
++		/* The surface takes a new window size at a swap */
++		CheckResize();
++	}
++}
++
++int FsInkey(void)
++{
++	if(0<nKeyBufUsed)
++	{
++		int keyCode=keyBuffer[0];
++		nKeyBufUsed--;
++		memmove(keyBuffer,keyBuffer+1,nKeyBufUsed*sizeof(int));
++		return keyCode;
++	}
++	return 0;
++}
++
++int FsInkeyChar(void)
++{
++	if(0<nCharBufUsed)
++	{
++		int c=charBuffer[0];
++		nCharBufUsed--;
++		memmove(charBuffer,charBuffer+1,nCharBufUsed*sizeof(int));
++		return c;
++	}
++	return 0;
++}
++
++int FsGetKeyState(int fsKeyCode)
++{
++	if(0<fsKeyCode && fsKeyCode<FSKEY_NUM_KEYCODE)
++	{
++		return fsKeyPress[fsKeyCode];
++	}
++	return 0;
++}
++
++int FsCheckWindowExposure(void)
++{
++	int ret=exposure;
++	exposure=0;
++	return ret;
++}
++
++void FsPushKey(int fskey)
++{
++	if(nKeyBufUsed<NKEYBUF)
++	{
++		keyBuffer[nKeyBufUsed++]=fskey;
++	}
++}
++
++void FsPushChar(int c)
++{
++	if(nCharBufUsed<NKEYBUF)
++	{
++		charBuffer[nCharBufUsed++]=c;
++	}
++}
++
++void FsChangeToProgramDir(void)
++{
++	if(NULL!=getenv("YSFlight$Dir"))
++	{
++		chdir("<YSFlight$Dir>");
++	}
++}
++
++/* fsguilib's Linux clipboard calls (linux/fsguiclipboard.cpp): kept inside
++   the program for now. */
++void FsX11GetClipBoardString(long long int &returnLength,char *&returnStr)
++{
++	returnLength=0;
++	returnStr=NULL;
++	if(NULL!=clipBoard)
++	{
++		returnStr=new char [clipBoardLength+1];
++		memcpy(returnStr,clipBoard,clipBoardLength);
++		returnStr[clipBoardLength]=0;
++		returnLength=clipBoardLength;
++	}
++}
++
++void FsX11SetClipBoardString(long long int length,const char str[])
++{
++	if(NULL!=clipBoard)
++	{
++		delete [] clipBoard;
++	}
++	clipBoard=new char [length+1];
++	memcpy(clipBoard,str,length);
++	clipBoard[length]=0;
++	clipBoardLength=length;
++}
++
++int FsGetNumCurrentTouch(void)
++{
++	return 0;
++}
++
++const FsVec2i *FsGetCurrentTouch(void)
++{
++	return NULL;
++}
++
++int FsEnableIME(void)
++{
++	return 0;
++}
++
++void FsDisableIME(void)
++{
++}
++
++int FsIsNativeTextInputAvailable(void)
++{
++	return 0;
++}
++
++int FsOpenNativeTextInput(int,int,int,int)
++{
++	return 0;
++}
++
++void FsCloseNativeTextInput(void)
++{
++}
++
++void FsSetNativeTextInputText(const wchar_t [])
++{
++}
++
++int FsGetNativeTextInputTextLength(void)
++{
++	return 0;
++}
++
++void FsGetNativeTextInputText(wchar_t str[],int bufLen)
++{
++	if(0<bufLen)
++	{
++		str[0]=0;
++	}
++}
++
++int FsGetNativeTextInputEvent(void)
++{
++	return 0;
++}

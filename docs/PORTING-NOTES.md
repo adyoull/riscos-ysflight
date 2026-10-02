@@ -2,7 +2,7 @@
 
 YSCE `231e711` (2026-02-08) and ysce_public `1b13297` (2025-05-19), built with
 GCCSDK GCC 10 (riscos-crossdev 1.1), riscos-unixlib 5.0.3.1 and the
-riscos-mesa devkit 20.3.5-10.
+riscos-mesa devkit 20.3.5-11.
 
 ## Patches
 
@@ -17,9 +17,11 @@ riscos-mesa devkit 20.3.5-10.
 | ysce 07 main-entry | main/fsmain.cpp, main_consvr/fsmainsvr.cpp | install the crash report; console lists exit instead of waiting in the menu | the list part |
 | ysce_public 01 unaligned-stl | ysclass/src/ysshellstl.cpp | unaligned float load in binary STL | yes |
 | ysce_public 02 thread-fixes | ysclass11/src/ysthreadpool.cpp, ysport/src/ysthread.cpp | missing `<cstdio>`; `RunParallel` joined one thread too many | yes |
-| ysce_public 03 riscos-cmake | fssimplewindow, yssimplesound, yssystemfont, ysgl CMakeLists | RISC OS back ends; no GLSL host tools when cross-compiling | |
+| ysce_public 03 riscos-cmake | yssimplesound, ysgl CMakeLists | silent sound for now; no GLSL host tools when cross-compiling | |
 | ysce_public 04 riscos-ysport | ysport/ | paths, URI_Dispatch, crash report | |
 | ysce_public 05 nownd-console | fssimplewindow/src/nownd/fssimplenowindow.cpp | keys via OS_Byte 129; missing `FsCheckWindowOpen` | the fix |
+| ysce_public 06 riscos-window | fssimplewindow/src/riscos/, its CMakeLists | the game window: Wimp + riscos-mesa EGL (below) | |
+| ysce_public 07 riscos-bitmap-font | yssystemfont/src/riscos/, its CMakeLists | GUI text with YSFlight's bitmap fonts until a FontManager version | |
 
 ## Build set-up
 
@@ -49,11 +51,53 @@ riscos-mesa devkit 20.3.5-10.
 - Crash report (ysce_public 04): SIGEMT/SIGOSERROR print the RISC OS error and
   `__write_backtrace` to stderr, then `_exit(2)`, as riscos-openttd's patch 15.
 
+## The game window (ysce_public 06)
+
+`fssimplewindow/src/riscos/fsriscoswrapper.cpp`; its header comment lists the
+design. Taken from riscos-mesa's freeglut back end and the other ports:
+
+- **One Wimp task, one window**; `FsPollDevice` empties the Wimp queue to the
+  first null event every frame (at most 64 events). Redraws go to
+  `eglRedrawWindowRISCOS`, which replots the last frame.
+- **`FsSleep` = `Wimp_PollIdle`**: UnixLib's sleeps busy-wait in a Wimp task
+  and would stop the desktop. Waits under 5 ms: one poll, then the clock.
+- **Keys:** the Wimp sends no key-ups. Held keys come from an OS_Byte 121
+  scan (only while the window has the caret); a Key_Pressed also counts as
+  held for that one poll, so taps between two frames aren't lost. The
+  physical key of a Key_Pressed is the key the scan finds newly down
+  (internal key numbers from SDL 2.26's `scancodes_riscos.h`); if none
+  (auto-repeat, software), the Wimp code is mapped. Ctrl/Alt: no character.
+  Unused keys go back to the Wimp (`Wimp_ProcessKey`), so F12 etc. work.
+- **Mouse:** presses from Mouse_Click at the click's own position, releases
+  and movement from Wimp_GetPointerInfo, the wheel from OS_Pointer 2
+  (Scroll_Request isn't sent on the Pi). Select/Menu/Adjust = left/middle/right.
+- **Full screen** = a borderless window the size of the screen (no mode
+  change; the program stays a Wimp task). Message_ModeChange reopens it.
+- **Sizes:** pixels for the program, OS units for the Wimp (EX0 EY0 modes).
+  `YSFlight$Size` sets the window size, `YSFlight$Render` the size drawn at
+  (EGL_RENDER_*_RISCOS: stretched to the window; the program sees that size
+  and the mouse is scaled to it). Overlays (`EGL$Overlay on`) are checked
+  every poll.
+- **Quitting:** Message_Quit exits; Message_PreQuit is objected to and treated
+  as the close icon, and a desktop shutdown is restarted with Ctrl-Shift-F12
+  (`Wimp_ProcessKey &1FC`) if the program closes within 30 s. The close icon
+  asks the program (`fsCloseWindowCallBack`), as on Windows.
+- **Started in a TaskWindow:** refused with a message (`*WimpTask`).
+- `GL_PERSPECTIVE_CORRECTION_HINT` = `GL_FASTEST` (riscos-mesa's fast texture
+  path); EGL config asks for `EGL_OPENGL_BIT` (EGL's default is ES).
+- `FsSubSecondTimer` = `CLOCK_MONOTONIC` (HAL counter in UnixLib 5.0.3.1).
+- Output: `!Run` sets `YSFlight$Log`; `YsRiscOsInstallErrorReport` opens it
+  once and `dup2`s it onto stdout and stderr (a file can't be opened for
+  writing twice; printing from a Wimp task would open a command window).
+- **Host test:** `tests/host-window/run.sh` (riscos-crossdev's fake RISC OS,
+  scripted Wimp/keyboard/pointer, stub EGL/GL): 61 checks; breaking the tap
+  latch, the render scaling, the click position or the shutdown restart each
+  fails it.
+
 ## Still null (later milestones)
 
-- M2: the window. `fssimplewindow` is the console stand-in; the game links
-  but can't run. Wimp/EGL back end in `fssimplewindow/src/riscos/`; held keys
-  by OS_Byte 121 scans (the Wimp has no key-up events).
-- M3: sound (link the plug-ins in; SDL2 audio) and the system font (the GUI
-  draws all text with it; FontManager back end).
+- Sound (link the plug-ins in; SDL2 audio) and a FontManager system font
+  (the bitmap-font stand-in is Latin-1 only).
+- Loading a flight doesn't poll the Wimp, so the desktop pauses while a
+  map loads (OpenTTD/Warzone lesson: poll every 50 ms during loading).
 - Joystick: null. Server list: compiled out.

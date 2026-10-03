@@ -5,7 +5,7 @@
 # the instructions per measured frame. Fixed 50 ms steps (PROF_FIXEDDT), so
 # a run under valgrind flies like a native one. Out: $PROF/out/NAME-POS.*
 # (callgrind file, log, last frame as PPM). GAME=<binary> profiles another
-# build (e.g. ysflight64_gl2). VALGRIND= runs natively and
+# build (e.g. ysflight64_gl2), GLDIR=<dir> another libOSMesa. VALGRIND= runs natively and
 # prints the time per frame instead.
 set -euo pipefail
 : "${PROF:=/tmp/ysprof}"
@@ -16,7 +16,7 @@ IFS=';' read -ra kv <<< "$keys"
 for k in "${kv[@]}"; do [ -n "$k" ] && echo "$k" >> "$cfg/flight.cfg"; done
 mkdir -p "$out/user"
 cd "$PROF/src/YSCE/runtime"
-export LD_LIBRARY_PATH=$PROF/gl PROF_FIXEDDT=50 PROF_SIZE=${SIZE:-640x480}
+export LD_LIBRARY_PATH=${GLDIR:-$PROF/gl} PROF_FIXEDDT=50 PROF_SIZE=${SIZE:-640x480}
 # Enter closes the joystick message, Space starts the flight
 export PROF_KEYS="30:57:1,60:1:2" PROF_SKIP=${SKIP:-200} PROF_FRAMES=${FR:-20}
 export PROF_PPM=$out/$name-$pos.ppm

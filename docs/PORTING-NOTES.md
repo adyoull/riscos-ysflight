@@ -149,6 +149,13 @@ Per frame at 640x480, F-18E, Aomori field:
   considered: 3.9 MB of PNG would become 43.9 MB of 32bpp sprites (38 MB of
   it the title pictures), for little gain over zlib. Still to do: share the
   ground objects' collision shells; Wimp polls during loading.
+- **riscos-mesa devkit 12d (integer fog spans, M2 test 8):** host A/B,
+  same seed, particles and ground texture off (instructions a frame,
+  runway / 10000 ft): with patch 12, 20.3.5-11 176M / 102M, 12d 173M /
+  102M; without patch 12, -11 237M / 153M, 12d 231M / 150M.
+  `_swrast_fog_rgba_span` at 10000 ft: 5.2M -> 4.7M. Patch 12 still saves
+  25-32% with 12d (mostly blending off and the fast smooth-triangle path,
+  not only the fog), so it stays.
 - **Hot paths in the gl1 code (M2 test 5, ysce 12):** with particles and
   the ground texture off, the full-screen sky cylinder (FsGroundSky::DrawByFog)
   and the ground mesh were drawn with GL fog (general span path) and, like

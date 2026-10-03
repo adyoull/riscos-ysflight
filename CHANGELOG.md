@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased: M2 test 8 (2026-10-04)
+
+- The same game as test 7, linked with riscos-mesa devkit 12d (on the way
+  to 20.3.5-12): Mesa's fog is now worked out in integers. On the host it
+  saves 1-3% of a frame; the Pi should gain more (no floating point per
+  pixel any more). For an A/B on the Pi against test 7.
+
 ## Unreleased: M2 test 7 (2026-10-03)
 
 - **Joysticks** (ysce patch 13): through Richard Walker's USBJoystick

@@ -20,6 +20,7 @@ riscos-mesa devkit 20.3.5-11.
 | ysce 10 riscos-graphics-defaults | config/fsconfig.cpp | particle smoke/clouds and ground texture off in a new RISC OS config (speed, below) | |
 | ysce 11 riscos-gl2-target | main/CMakeLists.txt | optional OpenGL 2 (GLSL) game, to compare (GL2=1) | |
 | ysce 12 riscos-software-gl-drawing | graphics/gl/fsgroundskygl.cpp, fsopengl.*, core/fssimulation.cpp, scenery/ysscenerygl.cpp (+ no-ops in gl2/null/d3d9) | sky/ground drawn with per-vertex fog and no blend; blending off for the opaque passes (speed, below) | maybe (as an option) |
+| ysce 13 riscos-joystick | ysjoystick/src/riscos/ysjoyreader.cpp (new), its CMakeLists | joysticks: USBJoystick 0.23+ slot API (all axes, hat, 32 buttons), else Joystick_Read stick 0 | |
 | ysce_public 01 unaligned-stl | ysclass/src/ysshellstl.cpp | unaligned float load in binary STL | yes |
 | ysce_public 02 thread-fixes | ysclass11/src/ysthreadpool.cpp, ysport/src/ysthread.cpp | missing `<cstdio>`; `RunParallel` joined one thread too many | yes |
 | ysce_public 03 riscos-cmake | yssimplesound, ysgl CMakeLists | silent sound for now; no GLSL host tools when cross-compiling | |
@@ -169,3 +170,18 @@ Per frame at 640x480, F-18E, Aomori field:
   shaders; it also samples a shadow depth texture. The picture is right.
 - The menu redecoded a 1920x990 title PNG every 8 s (~1200M instructions)
   and rescaled it on every redraw: ysce 08.
+
+## Joysticks (M2 test 7)
+
+From USBJoystick 0.24's source (`doc.APIs`, `h.joyswis`; Apache 2.0, by
+Richard Walker). SWIs &43F44-&43F47: Enumerate (R0 slot mask, R1
+generation), DeviceInfo (R2 -> record: size, manufacturer, product, serial,
+vendor, product id, num_axes, num_buttons, num_hats...), AxisInfo (R1 record
+size, R2 count, R3 -> {usage page, usage, type, name, min, mid, max,
+is_digital}), AxisValues (R1 value size, R2 count, R3 -> int32 values, R4
+buttons). Axis types: HATX 1, HATY 2, DPADX 3, DPADY 4, X 5, Y 6, Z 7, RX 8,
+RY 9, RZ 10, SLIDER 11; hats are digital -1/0/1 with Y -1 = up (same sense
+as Linux, so YSFlight's POV values match). Joystick_Read 16-bit: R0 = Y
+(bits 0-15, 65535 = up) | X << 16, R1 = buttons. Note: the module's doc
+says reason 0 packs X in bits 0-7 while the PRM says Y; only the 16-bit
+read is used here.

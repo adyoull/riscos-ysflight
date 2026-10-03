@@ -1,0 +1,505 @@
+RISC OS: joysticks through the Joystick SWIs.
+
+ysjoystick/src/riscos/ysjoyreader.cpp replaces the null reader:
+- USBJoystick 0.23 or later (Richard Walker, Apache 2.0): its slot API
+  (Joystick_Enumerate &43F44, Joystick_DeviceInfo &43F45, Joystick_AxisInfo
+  &43F46, Joystick_AxisValues &43F47). Up to 8 devices; analogue axes in the
+  order X, Y, Z, RZ, RX, RY, slider (up to 6); the first HAT or D-pad as the
+  POV hat; up to 32 buttons. Raw HID values, with the module's min/mid/max
+  as the starting calibration; YSFlight's own calibration dialog refines it
+  and saves <Choices$Write>/YSFlight/joycalib.
+- Otherwise, if some Joystick module answers Joystick_Read: stick 0 by the
+  16-bit read (X, Y, 32 buttons).
+- No Joystick module: no joysticks, as before.
+tests/host-joystick in riscos-ysflight checks all three against a fake
+module.
+
+For YSCE 231e711, after 03-riscos-cmake. See docs/PORTING-NOTES.md in riscos-ysflight.
+
+--- a/src/ysjoystick/src/CMakeLists.txt
++++ b/src/ysjoystick/src/CMakeLists.txt
+@@ -24,8 +24,8 @@
+ 	include_directories(macosx)
+ 	set(platform_HEADERS )
+ elseif(RISCOS)
+-	# No joystick support yet.
+-	set(platform_SRCS null/ysjoyreader.cpp)
++	# Joystick SWIs: USBJoystick's slot API, else Joystick_Read.
++	set(platform_SRCS riscos/ysjoyreader.cpp)
+ 	set(platform_HEADERS "")
+ elseif(UNIX)
+ 	set(platform_SRCS linux/ysjoyreader.cpp)
+--- /dev/null
++++ b/src/ysjoystick/src/riscos/ysjoyreader.cpp
+@@ -0,0 +1,471 @@
++/* YsJoyReader for RISC OS: joysticks through the Joystick SWIs.
++
++   - USBJoystick 0.23 or later (Richard Walker, Apache 2.0): its native
++     slot API. Joystick_Enumerate lists the attached devices,
++     Joystick_DeviceInfo / Joystick_AxisInfo describe them and
++     Joystick_AxisValues reads every axis (raw HID values with their
++     min/mid/max) and up to 32 buttons. A HAT switch or D-pad comes as two
++     digital axes (-1/0/1, Y -1 = up), which become YSFlight's POV hat.
++     Analogue axes are given to YSFlight in the order X, Y, Z, RZ, RX, RY,
++     slider (the usual stick, throttle, rudder order); the in-game control
++     assignment dialog can change which does what.
++   - Any other Joystick module (older USBJoystick, joystick podules): the
++     Acorn Joystick_Read 16-bit read of stick 0, which gives X, Y and 32
++     buttons. It can't tell whether a stick is plugged in, so it's only
++     used when the native API isn't there and Joystick_Read answers.
++   - No Joystick module: no joysticks (the mouse and keyboard still work).
++
++   Part of the RISC OS port of YSFlight; BSD-3 like the rest of ysjoystick. */
++
++#include <stdio.h>
++#include <string.h>
++#include <stdint.h>
++#include <kernel.h>
++
++#include "../ysjoyreader.h"
++
++#define Joystick_Read        0x43F40
++#define Joystick_Enumerate   0x43F44
++#define Joystick_DeviceInfo  0x43F45
++#define Joystick_AxisInfo    0x43F46
++#define Joystick_AxisValues  0x43F47
++
++/* USBJoystick's axis types (h.usbjoystick) */
++enum
++{
++	UJ_AXIS_HATX=1,UJ_AXIS_HATY=2,UJ_AXIS_DPADX=3,UJ_AXIS_DPADY=4,
++	UJ_AXIS_X=5,UJ_AXIS_Y=6,UJ_AXIS_Z=7,UJ_AXIS_RX=8,UJ_AXIS_RY=9,UJ_AXIS_RZ=10,UJ_AXIS_SLIDER=11
++};
++
++/* Records returned by the native API (h.joyswis). Only the leading fields
++   are used, and each record's size is taken from the SWI, so later
++   versions can add fields. */
++struct UJDeviceInfo
++{
++	uint32_t size;
++	const char *manufacturer;
++	const char *product;
++	const char *serial;
++	uint32_t vendor_id;
++	uint32_t product_id;
++	uint32_t num_axes;
++	uint32_t num_buttons;
++	uint32_t num_hats;
++};
++struct UJAxisInfo
++{
++	uint32_t hid_usage_page;
++	uint32_t hid_usage;
++	uint32_t type;
++	const char *name;
++	int32_t min,mid,max;
++	int32_t is_digital;
++};
++
++class YsJoyReader::PlatformDependentInfo
++{
++public:
++	int native;          // 1: USBJoystick slot API, 0: Joystick_Read stick 0
++	int slot;
++	int moduleAxis[YsJoyReaderMaxNumAxis];   // module axis index, or -1
++	int hatXAxis,hatYAxis;                   // module axis indices, or -1
++	int numButtons;
++};
++
++////////////////////////////////////////////////////////////
++
++YsJoyReaderElement::YsJoyReaderElement()
++{
++	exist=0;
++	value=0;
++	platformDependentInfoPtr=nullptr;
++}
++
++YsJoyReaderElement::~YsJoyReaderElement()
++{
++}
++
++YsJoyReaderAxis::YsJoyReaderAxis()
++{
++	min=0;
++	max=0;
++	calibCenter=32768;
++	calibMin=31768;
++	calibMax=33768;
++}
++
++int YsJoyReaderHatSwitch::GetDiscreteValue(void) const
++{
++	if(value==valueNeutral)
++	{
++		return 0;
++	}
++	else if(value==value0Deg)
++	{
++		return 1;
++	}
++	else if(value0Deg<value && value<value90Deg)
++	{
++		return 2;
++	}
++	else if(value==value90Deg)
++	{
++		return 3;
++	}
++	else if(value90Deg<value && value<value180Deg)
++	{
++		return 4;
++	}
++	else if(value==value180Deg)
++	{
++		return 5;
++	}
++	else if(value180Deg<value && value<value270Deg)
++	{
++		return 6;
++	}
++	else if(value270Deg==value)
++	{
++		return 7;
++	}
++	else if(value270Deg<value)
++	{
++		return 8;
++	}
++	return 0;
++}
++
++YsJoyReader::YsJoyReader()
++{
++	platformDependentInfoPtr=new PlatformDependentInfo;
++	platformDependentInfoPtr->native=0;
++	platformDependentInfoPtr->slot=-1;
++	for(int i=0; i<YsJoyReaderMaxNumAxis; ++i)
++	{
++		platformDependentInfoPtr->moduleAxis[i]=-1;
++	}
++	platformDependentInfoPtr->hatXAxis=-1;
++	platformDependentInfoPtr->hatYAxis=-1;
++	platformDependentInfoPtr->numButtons=0;
++	joyId=0;
++	name[0]=0;
++}
++
++YsJoyReader::~YsJoyReader()
++{
++	delete platformDependentInfoPtr;
++}
++
++class YsJoyReader::SetUpInfo
++{
++public:
++	int native;
++	int slot;
++};
++
++/* The POV value YSFlight expects (0 centred, 1 up, then clockwise in 45
++   degree steps to 8 up-left) from a hat's X and Y (-1/0/1, Y -1 = up). */
++static int HatValue(int x,int y)
++{
++	static const int table[3][3]=
++	{
++		// x=-1 x=0 x=1
++		{  8,   1,  2 },   // y=-1 (up)
++		{  7,   0,  3 },   // y= 0
++		{  6,   5,  4 },   // y=+1 (down)
++	};
++	x=(x<0 ? 0 : (x>0 ? 2 : 1));
++	y=(y<0 ? 0 : (y>0 ? 2 : 1));
++	return table[y][x];
++}
++
++int YsJoyReader::SetUp(int joyId,const SetUpInfo &info)
++{
++	// Success 1  Fail 0
++	PlatformDependentInfo &pd=*platformDependentInfoPtr;
++	this->joyId=joyId;
++	pd.native=info.native;
++	pd.slot=info.slot;
++	pd.hatXAxis=-1;
++	pd.hatYAxis=-1;
++	pd.numButtons=0;
++
++	for(int i=0; i<YsJoyReaderMaxNumAxis; i++)
++	{
++		axis[i].exist=0;
++		axis[i].value=0;
++		pd.moduleAxis[i]=-1;
++	}
++	for(int i=0; i<YsJoyReaderMaxNumButton; i++)
++	{
++		button[i].exist=0;
++		button[i].value=0;
++	}
++	for(int i=0; i<YsJoyReaderMaxNumHatSwitch; i++)
++	{
++		hatSwitch[i].exist=0;
++		hatSwitch[i].value=0;
++	}
++
++	_kernel_swi_regs r;
++	if(0==pd.native)
++	{
++		r.r[0]=256;   // 16-bit read, stick 0
++		if(NULL!=_kernel_swi(Joystick_Read,&r,&r))
++		{
++			return 0;
++		}
++		strcpy(name,"Joystick (Joystick_Read)");
++		for(int i=0; i<2; ++i)
++		{
++			axis[i].exist=1;
++			axis[i].min=0;
++			axis[i].max=65535;
++			axis[i].calibCenter=32768;
++			axis[i].calibMin=0;
++			axis[i].calibMax=65535;
++		}
++		pd.numButtons=32;
++		for(int i=0; i<YsJoyReaderMaxNumButton; ++i)
++		{
++			button[i].exist=1;
++		}
++		printf("Joystick %d: Joystick_Read stick 0\n",joyId);
++		Read();
++		return 1;
++	}
++
++	r.r[0]=pd.slot;
++	if(NULL!=_kernel_swi(Joystick_DeviceInfo,&r,&r) || 0==r.r[2])
++	{
++		return 0;
++	}
++	const UJDeviceInfo *dev=(const UJDeviceInfo *)r.r[2];
++	snprintf(name,sizeof(name),"%s",(NULL!=dev->product && 0!=dev->product[0]) ? dev->product : "USB joystick");
++	pd.numButtons=(int)dev->num_buttons;
++	if(YsJoyReaderMaxNumButton<pd.numButtons)
++	{
++		pd.numButtons=YsJoyReaderMaxNumButton;
++	}
++	for(int i=0; i<pd.numButtons; ++i)
++	{
++		button[i].exist=1;
++	}
++
++	r.r[0]=pd.slot;
++	if(NULL!=_kernel_swi(Joystick_AxisInfo,&r,&r) || 0==r.r[3] || r.r[1]<(int)sizeof(UJAxisInfo))
++	{
++		return 0;
++	}
++	const int recSize=r.r[1],nAxis=r.r[2];
++	const unsigned char *rec=(const unsigned char *)r.r[3];
++
++	static const unsigned int order[]=
++	{
++		UJ_AXIS_X,UJ_AXIS_Y,UJ_AXIS_Z,UJ_AXIS_RZ,UJ_AXIS_RX,UJ_AXIS_RY,UJ_AXIS_SLIDER
++	};
++	int nUsed=0;
++	for(unsigned int o=0; o<sizeof(order)/sizeof(order[0]) && nUsed<YsJoyReaderMaxNumAxis; ++o)
++	{
++		for(int a=0; a<nAxis && nUsed<YsJoyReaderMaxNumAxis; ++a)
++		{
++			const UJAxisInfo *ai=(const UJAxisInfo *)(rec+a*recSize);
++			if(ai->type==order[o] && 0==ai->is_digital)
++			{
++				pd.moduleAxis[nUsed]=a;
++				axis[nUsed].exist=1;
++				axis[nUsed].min=ai->min;
++				axis[nUsed].max=ai->max;
++				// Full range until the user calibrates (as on Linux)
++				axis[nUsed].calibMin=ai->min;
++				axis[nUsed].calibMax=ai->max;
++				axis[nUsed].calibCenter=ai->mid;
++				++nUsed;
++			}
++		}
++	}
++	// The first hat, else the first D-pad, is the POV hat.
++	for(int pass=0; pass<2 && pd.hatXAxis<0; ++pass)
++	{
++		const unsigned int tx=(0==pass ? UJ_AXIS_HATX : UJ_AXIS_DPADX);
++		const unsigned int ty=(0==pass ? UJ_AXIS_HATY : UJ_AXIS_DPADY);
++		int ax=-1,ay=-1;
++		for(int a=0; a<nAxis; ++a)
++		{
++			const UJAxisInfo *ai=(const UJAxisInfo *)(rec+a*recSize);
++			if(ai->type==tx && ax<0)
++			{
++				ax=a;
++			}
++			if(ai->type==ty && ay<0)
++			{
++				ay=a;
++			}
++		}
++		if(0<=ax && 0<=ay)
++		{
++			pd.hatXAxis=ax;
++			pd.hatYAxis=ay;
++			hatSwitch[0].exist=1;
++		}
++	}
++
++	printf("Joystick %d: USBJoystick slot %d \"%s\", %d axes (%d used), %d buttons%s\n",
++	    joyId,pd.slot,name,nAxis,nUsed,pd.numButtons,(0<=pd.hatXAxis ? ", hat" : ""));
++	Read();
++	return 1;
++}
++
++void YsJoyReader::Read(void)
++{
++	PlatformDependentInfo &pd=*platformDependentInfoPtr;
++	_kernel_swi_regs r;
++
++	if(0==pd.native)
++	{
++		r.r[0]=256;
++		if(NULL==_kernel_swi(Joystick_Read,&r,&r))
++		{
++			const unsigned int pos=(unsigned int)r.r[0];
++			const unsigned int btn=(unsigned int)r.r[1];
++			axis[0].value=(int)((pos>>16)&0xFFFF);
++			// Joystick_Read's Y is 65535 at the top; YSFlight's axes are
++			// smaller at the top (as Linux and Windows report them).
++			axis[1].value=65535-(int)(pos&0xFFFF);
++			for(int i=0; i<YsJoyReaderMaxNumButton; ++i)
++			{
++				button[i].value=(int)((btn>>i)&1);
++			}
++		}
++		return;
++	}
++
++	r.r[0]=pd.slot;
++	if(NULL!=_kernel_swi(Joystick_AxisValues,&r,&r) || 0==r.r[3])
++	{
++		// Unplugged: centred and released
++		for(int i=0; i<YsJoyReaderMaxNumAxis; ++i)
++		{
++			axis[i].value=axis[i].calibCenter;
++		}
++		for(int i=0; i<YsJoyReaderMaxNumButton; ++i)
++		{
++			button[i].value=0;
++		}
++		hatSwitch[0].value=0;
++		return;
++	}
++	const int valSize=r.r[1],nAxis=r.r[2];
++	const unsigned char *val=(const unsigned char *)r.r[3];
++	const unsigned int btn=(unsigned int)r.r[4];
++	auto Value=[&](int a)->int
++	{
++		int32_t v=0;
++		if(0<=a && a<nAxis && 4<=valSize)
++		{
++			memcpy(&v,val+a*valSize,4);
++		}
++		return (int)v;
++	};
++
++	for(int i=0; i<YsJoyReaderMaxNumAxis; ++i)
++	{
++		if(0<=pd.moduleAxis[i])
++		{
++			axis[i].value=Value(pd.moduleAxis[i]);
++		}
++	}
++	for(int i=0; i<pd.numButtons; ++i)
++	{
++		button[i].value=(int)((btn>>i)&1);
++	}
++	if(0<=pd.hatXAxis)
++	{
++		hatSwitch[0].value=HatValue(Value(pd.hatXAxis),Value(pd.hatYAxis));
++	}
++}
++
++int YsJoyReader::WriteCalibInfoFile(FILE *fp) const
++{
++	fprintf(fp,"BGNJOY %d\n",joyId);
++	for(int i=0; i<YsJoyReaderMaxNumAxis; i++)
++	{
++		if(axis[i].exist!=0)
++		{
++			fprintf(fp,"AXSINF %d %d %d %d\n",i,axis[i].calibCenter,axis[i].calibMin,axis[i].calibMax);
++		}
++	}
++	fprintf(fp,"ENDJOY\n");
++	return 1;
++}
++
++int YsJoyReader::ReadCalibInfoFile(FILE *fp)
++{
++	char str[256];
++	while(fgets(str,255,fp)!=NULL)
++	{
++		if(strncmp(str,"AXSINF",6)==0)
++		{
++			int axisId,cen,min,max;
++			if(4==sscanf(str,"%*s %d %d %d %d",&axisId,&cen,&min,&max) &&
++			   0<=axisId && axisId<YsJoyReaderMaxNumAxis)
++			{
++				axis[axisId].calibCenter=cen;
++				axis[axisId].calibMin=min;
++				axis[axisId].calibMax=max;
++			}
++		}
++		else if(strncmp(str,"ENDJOY",6)==0)
++		{
++			return 1;
++		}
++	}
++	return 0;
++}
++
++int YsJoyReaderSetUpJoystick(int &nJoystick,YsJoyReader joystick[],int maxNumJoystick)
++{
++	nJoystick=0;
++
++	_kernel_swi_regs r;
++	if(NULL==_kernel_swi(Joystick_Enumerate,&r,&r))
++	{
++		const unsigned int mask=(unsigned int)r.r[0];
++		for(int slot=0; slot<32 && nJoystick<maxNumJoystick; ++slot)
++		{
++			if(0!=(mask&(1u<<slot)))
++			{
++				YsJoyReader::SetUpInfo info;
++				info.native=1;
++				info.slot=slot;
++				if(0!=joystick[nJoystick].SetUp(nJoystick,info))
++				{
++					++nJoystick;
++				}
++			}
++		}
++		if(0==nJoystick)
++		{
++			printf("USBJoystick: no joystick attached\n");
++		}
++		return nJoystick;
++	}
++
++	if(0<maxNumJoystick)
++	{
++		YsJoyReader::SetUpInfo info;
++		info.native=0;
++		info.slot=0;
++		if(0!=joystick[0].SetUp(0,info))
++		{
++			nJoystick=1;
++		}
++	}
++	return nJoystick;
++}
++
++FILE *YsJoyReaderOpenJoystickCalibrationFile(const char mode[])
++{
++	// Next to YSFlight's other settings (riscos-paths patch)
++	return fopen("<Choices$Write>/YSFlight/joycalib",mode);
++}

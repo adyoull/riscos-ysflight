@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased: M2 test 7 (2026-10-03)
+
+- **Joysticks** (ysce patch 13): through Richard Walker's USBJoystick
+  module, 0.23 or later: up to 8 devices, every axis (X, Y, Z, RZ, RX, RY,
+  slider, up to 6), the hat or D-pad as YSFlight's POV hat, and 32 buttons.
+  With another joystick module, Joystick_Read's stick 0 (X, Y, buttons).
+  Assign them in Option > Joystick/Key Assignments; calibration is saved in
+  `<Choices$Write>.YSFlight.joycalib`. Host test `tests/host-joystick`.
+
 ## Unreleased: M2 test 6 (2026-10-03)
 
 - **Faster image loading:** PNGs are decoded with zlib (from the

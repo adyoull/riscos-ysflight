@@ -36,6 +36,9 @@ unzip over an !YSFlight of the same version.
 
 ## Checks
 
+- `tests/host-joystick/run.sh` (WORK as for the build; g++-multilib): the
+  RISC OS joystick reader against a fake Joystick module (USBJoystick slot
+  API, Joystick_Read only, no module).
 - `tests/png-decode/run.sh` (WORK as for the build; needs zlib1g-dev,
   python3-pil, ImageMagick for the interlaced cases): the RISC OS PNG path
   (zlib, ysce_public patch 10) must decode every runtime PNG and ~200 test

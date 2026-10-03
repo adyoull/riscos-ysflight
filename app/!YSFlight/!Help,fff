@@ -4,8 +4,8 @@
 YSFlight Community Edition, a free flight simulator, for RISC OS.
 This is an early test build: the game runs in a desktop window, drawn
 with software OpenGL (riscos-mesa). Not done yet: sound, the desktop's
-fonts (the text uses YSFlight's own bitmap font, Latin-1 only), joysticks
-and the online server list.
+fonts (the text uses YSFlight's own bitmap font, Latin-1 only) and the
+online server list.
 
 Needs: RISC OS 5 on an ARMv7 machine with VFP (Raspberry Pi 2, 3, 4,
 400), SharedUnixLibrary 1.16 or later and ARMEABISupport (PackMan).
@@ -19,6 +19,14 @@ go to the file YSFlightLog in the scrap directory
 Keys and mouse: as YSFlight on other systems. Select = left button,
 Menu = middle, Adjust = right. Click in the window to give it the
 keyboard.
+
+Joysticks: USB joysticks and gamepads work through Richard Walker's
+USBJoystick module (0.23 or later gives every axis, the hat and all
+buttons, for up to 8 devices; load it before starting YSFlight). Other
+joystick modules that provide Joystick_Read give one stick with X, Y and
+buttons. Choose which axis and button does what in Option >
+Joystick/Key Assignments, and calibrate in Option > Calibrate
+Joystick; the calibration is kept in <Choices$Write>.YSFlight.joycalib.
 
 Speed: software OpenGL draws every pixel with the processor, so a
 smaller window, or a smaller picture stretched to the window, is

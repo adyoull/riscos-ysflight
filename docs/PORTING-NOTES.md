@@ -29,6 +29,7 @@ riscos-mesa devkit 20.3.5-11.
 | ysce_public 07 riscos-bitmap-font | yssystemfont/src/riscos/, its CMakeLists | GUI text with YSFlight's bitmap fonts until a FontManager version | |
 | ysce_public 08 riscos-timing | fslazywindow/src/linux_win/fslazywindow.cpp | time per loop (poll, simulation, draw, swap, sleep) in the log every 5 s | |
 | ysce_public 09 riscos-loop-cap | fslazywindow/src/linux_win/fslazywindow.cpp | at most 100 loop passes a second (a screen drawing nothing took all the CPU) | |
+| ysce_public 10 riscos-png-zlib | ysbitmap/src/yspng.cpp, yspng.h, CMakeLists.txt | PNGs inflated with zlib and unfiltered a row at a time (same bytes, about 5x faster; tests/png-decode) | maybe |
 
 ## Build set-up
 
@@ -137,6 +138,16 @@ Per frame at 640x480, F-18E, Aomori field:
   (FsGroundSky::DrawByFog, untextured, `_swrast_fog_rgba_span` 16%),
   the ground mesh, scenery, about 7 clears a frame. Smaller render size
   (`YSFlight$Render`) scales it down.
+- **Loading (M2 test 6):** start-up to the first flight frame on the host:
+  the menu picture (1920x992 PNG) ~1200M instructions, textures ~1000M, the
+  field ~1700M (of which 1100M copying a collision shell for each of 664
+  ground objects, 350M parsing 93 DNM models). YSFlight's own PNG decoder
+  takes ~160 instructions per output byte. ysce_public 10 uses zlib and
+  row-wise unfiltering (title00: 1166M -> 308M), and package.sh shrinks the
+  title pictures to 1024 wide (-> 89M). Converting the PNGs to sprites was
+  considered: 3.9 MB of PNG would become 43.9 MB of 32bpp sprites (38 MB of
+  it the title pictures), for little gain over zlib. Still to do: share the
+  ground objects' collision shells; Wimp polls during loading.
 - **Hot paths in the gl1 code (M2 test 5, ysce 12):** with particles and
   the ground texture off, the full-screen sky cylinder (FsGroundSky::DrawByFog)
   and the ground mesh were drawn with GL fog (general span path) and, like

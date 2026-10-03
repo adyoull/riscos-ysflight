@@ -1,6 +1,7 @@
 # Building
 
-Needs a Linux x86-64 host with git, cmake, make, python3 and:
+Needs a Linux x86-64 host with git, cmake, make, python3 with Pillow
+(`python3-pil`, used by package.sh to shrink the menu pictures) and:
 
 1. **riscos-crossdev toolchain 1.1** (`riscos-crossdev-toolchain-1.1-x86_64-linux.tar.xz`),
    with **riscos-unixlib 5.0.3.1** installed in it:
@@ -34,6 +35,11 @@ builds `ysflight32_gl2`, and `build/package-gl2.sh VERSION` makes
 unzip over an !YSFlight of the same version.
 
 ## Checks
+
+- `tests/png-decode/run.sh` (WORK as for the build; needs zlib1g-dev,
+  python3-pil, ImageMagick for the interlaced cases): the RISC OS PNG path
+  (zlib, ysce_public patch 10) must decode every runtime PNG and ~200 test
+  images byte for byte like the original decoder.
 
 - `tools/check-stack-probes.py ELF`: must report 0 unprobed frames.
 - riscos-crossdev `checks/check-fpu.sh ELF`: no VFPv4 instructions.

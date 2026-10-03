@@ -11,6 +11,17 @@ APP="$STAGE/!YSFlight"
 cp -r "$RYS_DIR/app/!YSFlight" "$APP"
 # All of upstream's runtime data (aircraft, scenery, sound, document...)
 cp -r "$WORK/YSCE/runtime/." "$APP/"
+# The menu background pictures are 1920x99x and only ever drawn stretched
+# to the window: 1024 wide decodes about 3.5 times faster on the Pi.
+python3 - "$APP/misc" <<'PY'
+import sys, glob
+from PIL import Image
+for f in sorted(glob.glob(sys.argv[1] + "/title*.png")):
+    im = Image.open(f)
+    if im.width > 1024:
+        im = im.resize((1024, round(im.height * 1024 / im.width)), Image.LANCZOS)
+        im.save(f, optimize=True)
+PY
 # Absolute (AIF) files, so they need no ELF loader (riscos-crossdev rule 7):
 # the game as !RunImage, the console server as Server.
 arm-riscos-gnueabihf-strip -o "$STAGE/gl1.elf" "$WORK/build/main/ysflight32_gl1"

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased: M2 test 6 (2026-10-03)
+
+- **Faster image loading:** PNGs are decoded with zlib (from the
+  riscos-mesa devkit) and unfiltered a row at a time instead of byte by
+  byte (ysce_public patch 10). Same pixels, checked byte for byte by
+  `tests/png-decode`; about 5 times fewer instructions.
+- The menu pictures are shrunk to 1024 pixels wide when packaging (they are
+  only shown stretched to the window). With the new decoder, loading one
+  takes about 13 times less work than before.
+
 ## Unreleased: M2 test 5 (2026-10-02)
 
 - **Faster drawing of the sky, ground and solid objects** with software

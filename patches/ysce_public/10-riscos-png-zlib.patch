@@ -1,0 +1,311 @@
+RISC OS: decode PNG images with zlib, a row at a time.
+
+YsPngUncompressor inflates bit by bit and hands each byte to
+YsRawPngDecoder::Output, which unfilters and converts it on its own: about
+160 instructions per output byte, so the 1920x990 menu picture took about
+1200M instructions (around a second on a Pi) and every texture load was
+slow. With YS_PNG_ZLIB (set for RISC OS in the ysbitmap CMakeLists; zlib is
+in the riscos-mesa devkit):
+- the IDAT data is inflated with zlib (raw deflate after the zlib header,
+  so no Adler-32 pass, which the original never checked either);
+- new virtual OutputBlock: YsRawPngDecoder unfilters and converts whole rows
+  for non-interlaced 8-bit images of every colour type, with the same
+  results as Output; other formats still go byte by byte through Output;
+- Flip swaps whole rows.
+tests/png-decode in riscos-ysflight decodes every runtime PNG and ~200
+generated images (all colour types, sizes, tRNS, Adam7) both ways and
+compares them byte for byte. Host, title00 + particle_tile + particle01 +
+cloud01: about 1670M -> 330M instructions.
+
+For ysce_public 1b13297. See docs/PORTING-NOTES.md in riscos-ysflight.
+
+--- a/src/ysbitmap/src/CMakeLists.txt
++++ b/src/ysbitmap/src/CMakeLists.txt
+@@ -13,3 +13,8 @@
+ 	ysbitmaptemplate.h
+ )
+ target_include_directories(${TARGET_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
++if(RISCOS OR YS_PNG_ZLIB)
++	# PNG data inflated with zlib (the riscos-mesa devkit has it): yspng.cpp.
++	target_compile_definitions(${TARGET_NAME} PRIVATE YS_PNG_ZLIB)
++	target_link_libraries(${TARGET_NAME} z)
++endif()
+--- a/src/ysbitmap/src/yspng.h
++++ b/src/ysbitmap/src/yspng.h
+@@ -221,6 +221,11 @@
+ 	virtual int PrepareOutput(void);
+ 	virtual int Output(unsigned char dat);
+ 	virtual int EndOutput(void);
++
++	/* A block of uncompressed image data. The default passes it to Output
++	   a byte at a time; YsRawPngDecoder has a faster version for the common
++	   formats when built with YS_PNG_ZLIB (RISC OS). */
++	virtual int OutputBlock(const unsigned char dat[],size_t n);
+ };
+ 
+ 
+@@ -267,6 +272,7 @@
+ 	virtual int PrepareOutput(void);
+ 	virtual int Output(unsigned char dat);
+ 	virtual int EndOutput(void);
++	virtual int OutputBlock(const unsigned char dat[],size_t n);
+ 
+ 	void Flip(void);  // For drawing in OpenGL
+ };
+--- a/src/ysbitmap/src/yspng.cpp
++++ b/src/ysbitmap/src/yspng.cpp
+@@ -28,6 +28,15 @@
+ //////////////////////////////////////////////////////////// */
+ 
+ #include <stdio.h>
++#ifdef YS_PNG_ZLIB
++// RISC OS: the image data is inflated with zlib (from the riscos-mesa
++// devkit) instead of YsPngUncompressor, and the common 8-bit formats are
++// unfiltered a row at a time. YsPngUncompressor handed over one byte at a
++// time and took about 160 instructions per output byte; the results are
++// the same (checked byte for byte on all of YSFlight's images).
++#include <string.h>
++#include <zlib.h>
++#endif
+ 
+ #include "yspng.h"
+ 
+@@ -1097,9 +1106,49 @@
+ 
+ 	if(PrepareOutput()==YSOK)
+ 	{
+-		YsPngUncompressor uncompressor;
+-		uncompressor.output=this;
+-		uncompressor.Uncompress(datBufUsed,datBuf);
++#ifdef YS_PNG_ZLIB
++		// Raw deflate after the 2-byte zlib header (no preset dictionary),
++		// so zlib doesn't compute the Adler-32 check, which the original
++		// decoder didn't check either.
++		z_stream zs;
++		memset(&zs,0,sizeof(zs));
++		const int zlibHeader=(2<=datBufUsed && 8==(datBuf[0]&0x0F) && 0==(datBuf[1]&0x20) &&
++		                      0==((datBuf[0]<<8)|datBuf[1])%31);
++		zs.next_in=datBuf+2;
++		zs.avail_in=datBufUsed-2;
++		if(0!=zlibHeader && Z_OK==inflateInit2(&zs,-15))
++		{
++			unsigned char out[65536];
++			int zr=Z_OK;
++			while(Z_OK==zr)
++			{
++				zs.next_out=out;
++				zs.avail_out=sizeof(out);
++				zr=inflate(&zs,Z_NO_FLUSH);
++				const size_t produced=sizeof(out)-zs.avail_out;
++				if(Z_OK!=zr && Z_STREAM_END!=zr)
++				{
++					printf("PNG: zlib error %d\n",zr);
++					break;
++				}
++				if(0<produced)
++				{
++					OutputBlock(out,produced);
++				}
++				else if(Z_OK==zr && 0==zs.avail_in)
++				{
++					break;   // truncated data
++				}
++			}
++			inflateEnd(&zs);
++		}
++		else
++#endif
++		{
++			YsPngUncompressor uncompressor;
++			uncompressor.output=this;
++			uncompressor.Uncompress(datBufUsed,datBuf);
++		}
+ 
+ 		EndOutput();
+ 	}
+@@ -1119,6 +1168,15 @@
+ 	return YSOK;
+ }
+ 
++int YsGenericPngDecoder::OutputBlock(const unsigned char dat[],size_t n)
++{
++	for(size_t i=0; i<n; ++i)
++	{
++		Output(dat[i]);
++	}
++	return YSOK;
++}
++
+ int YsGenericPngDecoder::EndOutput(void)
+ {
+ 	return YSOK;
+@@ -2013,8 +2071,169 @@
+ 	return YSOK;
+ }
+ 
++int YsRawPngDecoder::OutputBlock(const unsigned char dat[],size_t n)
++{
++#ifdef YS_PNG_ZLIB
++	// Whole rows for non-interlaced 8-bit images: the same filtering and
++	// conversion as Output, row by row.
++	int bpp=0;
++	if(0==hdr.interlaceMethod && 8==hdr.bitDepth)
++	{
++		switch(hdr.colorType)
++		{
++		case 0: bpp=1; break;
++		case 2: bpp=3; break;
++		case 3: bpp=1; break;
++		case 4: bpp=2; break;
++		case 6: bpp=4; break;
++		}
++	}
++	if(0==bpp || nullptr==curLine8 || nullptr==rgba)
++	{
++		return YsGenericPngDecoder::OutputBlock(dat,n);
++	}
++
++	const int rowBytes=wid*bpp;
++	size_t i=0;
++	while(i<n && y<hei)
++	{
++		if(x==-1)
++		{
++			filter=dat[i++];
++			inLineCount=0;
++			x=0;
++			continue;
++		}
++		size_t take=(size_t)(rowBytes-inLineCount);
++		if(n-i<take)
++		{
++			take=n-i;
++		}
++		memcpy(curLine8+inLineCount,dat+i,take);
++		inLineCount+=(int)take;
++		i+=take;
++		if(inLineCount<rowBytes)
++		{
++			break;
++		}
++
++		// Unfilter (PNG specification 9.2). Above the first row counts as 0.
++		unsigned char *cur=curLine8;
++		const unsigned char *prv=prvLine8;
++		if(0==y)
++		{
++			memset(prvLine8,0,rowBytes);
++		}
++		switch(filter)
++		{
++		case 1:
++			for(int k=bpp; k<rowBytes; ++k)
++			{
++				cur[k]+=cur[k-bpp];
++			}
++			break;
++		case 2:
++			for(int k=0; k<rowBytes; ++k)
++			{
++				cur[k]+=prv[k];
++			}
++			break;
++		case 3:
++			for(int k=0; k<bpp; ++k)
++			{
++				cur[k]+=(unsigned char)(prv[k]/2);
++			}
++			for(int k=bpp; k<rowBytes; ++k)
++			{
++				cur[k]+=(unsigned char)(((unsigned int)cur[k-bpp]+prv[k])/2);
++			}
++			break;
++		case 4:
++			for(int k=0; k<bpp; ++k)
++			{
++				cur[k]+=prv[k];   // Paeth(0,b,0) is b
++			}
++			for(int k=bpp; k<rowBytes; ++k)
++			{
++				cur[k]+=Paeth(cur[k-bpp],prv[k],prv[k-bpp]);
++			}
++			break;
++		}
++
++		// Convert to RGBA as Output does
++		unsigned char *o=rgba+(size_t)y*wid*4;
++		switch(hdr.colorType)
++		{
++		case 0:
++			for(int k=0; k<wid; ++k,o+=4)
++			{
++				const unsigned int v=cur[k];
++				o[0]=o[1]=o[2]=(unsigned char)v;
++				o[3]=((v==trns.col[0] || v==trns.col[1] || v==trns.col[2]) ? 0 : 255);
++			}
++			break;
++		case 2:
++			for(int k=0; k<wid; ++k,o+=4)
++			{
++				const unsigned char *s=cur+k*3;
++				o[0]=s[0];
++				o[1]=s[1];
++				o[2]=s[2];
++				o[3]=((s[0]==trns.col[0] && s[1]==trns.col[1] && s[2]==trns.col[2]) ? 0 : 255);
++			}
++			break;
++		case 3:
++			for(int k=0; k<wid; ++k,o+=4)
++			{
++				const unsigned int colIdx=cur[k];
++				if(colIdx<plt.nEntry)
++				{
++					o[0]=plt.entry[colIdx*3  ];
++					o[1]=plt.entry[colIdx*3+1];
++					o[2]=plt.entry[colIdx*3+2];
++					o[3]=((colIdx==trns.col[0] || colIdx==trns.col[1] || colIdx==trns.col[2]) ? 0 : 255);
++				}
++			}
++			break;
++		case 4:
++			for(int k=0; k<wid; ++k,o+=4)
++			{
++				o[0]=o[1]=o[2]=cur[k*2];
++				o[3]=cur[k*2+1];
++			}
++			break;
++		case 6:
++			memcpy(o,cur,(size_t)wid*4);
++			break;
++		}
++
++		index=(unsigned int)((y+1)*wid*4);
++		y++;
++		x=-1;
++		ShiftTwoLineBuf();
++	}
++	return YSOK;
++#else
++	return YsGenericPngDecoder::OutputBlock(dat,n);
++#endif
++}
++
+ void YsRawPngDecoder::Flip(void)  // For drawing in OpenGL
+ {
++#ifdef YS_PNG_ZLIB
++	// Whole rows at a time.
++	const size_t rowLng=(size_t)wid*4;
++	unsigned char *tmp=new unsigned char [rowLng];
++	for(int y=0; y<hei/2; y++)
++	{
++		unsigned char *a=rgba+y*rowLng,*b=rgba+(hei-1-y)*rowLng;
++		memcpy(tmp,a,rowLng);
++		memcpy(a,b,rowLng);
++		memcpy(b,tmp,rowLng);
++	}
++	delete [] tmp;
++	return;
++#endif
+ 	int x,y,bytePerLine;
+ 	unsigned int swp;
+ 	bytePerLine=wid*4;

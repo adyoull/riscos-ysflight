@@ -7,3 +7,4 @@
 07-riscos-bitmap-font.patch
 08-riscos-timing.patch
 09-riscos-loop-cap.patch
+10-riscos-png-zlib.patch

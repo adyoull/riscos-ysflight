@@ -8,13 +8,12 @@ Needs a Linux x86-64 host with git, cmake, make, python3 with Pillow
    release's `unixlib-riscos.diff`, the copy in `patches/unixlib/`) and links
    statically by default. Nothing needs copying into it any more. Its
    `elf2aif` has the fix for big images.
-2. **riscos-mesa devkit 20.3.5-12** (OSMesa, EGL, GLU; `bin/mkrozip.py`).
-   Until -12 is released the test builds use its pre-release devkit 12f;
-   20.3.5-11 also works (without the faster fog).
+2. **riscos-mesa devkit 20.3.5-12** (`riscos-mesa-devkit-20.3.5-12.tgz`,
+   sha256 07f1066b…; OSMesa, EGL, GLU; `bin/mkrozip.py`).
 
 ```
 export RISCOS_TOOLCHAIN=/path/to/riscos-crossdev-toolchain-1.3-x86_64-linux
-export RISCOS_DEVKIT=/path/to/riscos-mesa-devkit-12f
+export RISCOS_DEVKIT=/path/to/riscos-mesa-devkit-20.3.5-12
 build/build.sh
 build/package.sh m1-2
 ```

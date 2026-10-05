@@ -2,7 +2,7 @@
 
 YSCE `231e711` (2026-02-08) and ysce_public `1b13297` (2025-05-19), built with
 GCCSDK GCC 10 (riscos-crossdev 1.3), riscos-unixlib 5.0.3.2 and the
-riscos-mesa devkit 20.3.5-12 (pre-release 12f).
+riscos-mesa devkit 20.3.5-12.
 
 ## Patches
 
@@ -156,6 +156,11 @@ Per frame at 640x480, F-18E, Aomori field:
   `_swrast_fog_rgba_span` at 10000 ft: 5.2M -> 4.7M. Patch 12 still saves
   25-32% with 12d (mostly blending off and the fast smooth-triangle path,
   not only the fog), so it stays.
+- **riscos-mesa 20.3.5-12 release (M2 test 10):** colour material only
+  recomputed when a vertex's colour changes, fog pixels read/written as
+  words, faster 2D texturing. Host, same seed, with patch 12: runway 173M
+  (12d) -> 162M, 10000 ft 102M -> 95M (-6 to -7%). Pictures: 10000 ft at
+  most 1 level apart; runway 19 pixels at one cloud edge.
 - **Hot paths in the gl1 code (M2 test 5, ysce 12):** with particles and
   the ground texture off, the full-screen sky cylinder (FsGroundSky::DrawByFog)
   and the ground mesh were drawn with GL fog (general span path) and, like

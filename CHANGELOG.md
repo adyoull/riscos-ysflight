@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased: M2 test 10 (2026-10-05)
+
+- **Linked with the riscos-mesa 20.3.5-12 release** (was its pre-release
+  devkit 12f). Lit models are faster (Mesa no longer recomputes the
+  material for every vertex unless its colour changes), fog is quicker
+  again, and the EGL and overlay fixes from riscos-mesa's code audit come
+  with it. On the host: 6-7% fewer instructions a frame than test 9, same
+  picture.
+
 ## Unreleased: M2 test 9 (2026-10-05)
 
 - **Built with the updated libraries:**

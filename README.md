@@ -1,7 +1,7 @@
 # YSFlight Community Edition for RISC OS
 
 A port of [YSFlight Community Edition](https://github.com/YSCEDC/YSCE), the
-free flight simulator, to RISC OS 5, using UnixLib (riscos-unixlib 5.0.3.1)
+free flight simulator, to RISC OS 5, using UnixLib (riscos-unixlib 5.0.3.2)
 and the riscos-mesa OpenGL devkit.
 
 **Status: early test builds.** The simulator core (console server) runs on
@@ -17,7 +17,7 @@ coding assistant on this port.
 
 - RISC OS 5 on an ARMv7 or later machine with VFP (Raspberry Pi 2, 3, 4, 400).
 - `SharedUnixLibrary` 1.16 or later and `ARMEABISupport` (PackMan).
-- `PThreadTicker` 0.03 (from UnixLib 5.0.3.1): included in `!YSFlight` and
+- `PThreadTicker` 0.03 (from UnixLib 5.0.3.2): included in `!YSFlight` and
   loaded by `!Run`.
 
 ## The test build
@@ -32,7 +32,7 @@ console server tests in a task window.
 | Path | What |
 |---|---|
 | `patches/ysce/`, `patches/ysce_public/` | One patch per change, applied in `series` order to YSCE `231e711` and ysce_public `1b13297` |
-| `patches/unixlib/unixlib-riscos.diff` | The riscos-unixlib 5.0.3.1 change set (the UnixLib linked into the programs) |
+| `patches/unixlib/unixlib-riscos.diff` | The riscos-unixlib 5.0.3.2 change set (the UnixLib linked into the programs) |
 | `build/` | `env.sh`, `build.sh`, `package.sh`, the CMake toolchain files |
 | `app/!YSFlight/` | `!Run`, `!Help`, `Tests`, PThreadTicker |
 | `tools/check-stack-probes.py` | Finds big stack frames without probes |

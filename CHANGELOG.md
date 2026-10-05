@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased: M2 test 9 (2026-10-05)
+
+- **Built with the updated libraries:**
+  - riscos-crossdev 1.3 (static-only toolchain) with **riscos-unixlib
+    5.0.3.2** built in; `patches/unixlib/unixlib-riscos.diff` is now
+    5.0.3.2's. Nothing has to be copied into the toolchain any more.
+    PThreadTicker stays 0.03; the ticker block stays 640 bytes.
+  - riscos-mesa devkit 12f (pre-release of 20.3.5-12): the integer fog of
+    devkit 12d, Mesa's glPushMatrix flush fix, and the review fixes.
+- Upstream YSCE and ysce_public are unchanged (still 231e711 / 1b13297).
+
 ## Unreleased: M2 test 8 (2026-10-04)
 
 - The same game as test 7, linked with riscos-mesa devkit 12d (on the way

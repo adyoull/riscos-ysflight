@@ -3,18 +3,18 @@
 Needs a Linux x86-64 host with git, cmake, make, python3 with Pillow
 (`python3-pil`, used by package.sh to shrink the menu pictures) and:
 
-1. **riscos-crossdev toolchain 1.1** (`riscos-crossdev-toolchain-1.1-x86_64-linux.tar.xz`),
-   with **riscos-unixlib 5.0.3.1** installed in it:
-   - copy `libunixlib.a` from the riscos-unixlib v5.0.3.1 release over
-     `<toolchain>/arm-riscos-gnueabihf/lib/libunixlib.a`;
-   - the toolchain's UnixLib headers already match 5.0.3.1 (only a comment in
-     `sched.h` differs), so they don't need replacing.
-   The toolchain's `elf2aif` has the fix for big images.
-2. **riscos-mesa devkit 20.3.5-11** (OSMesa, EGL, GLU; `bin/mkrozip.py`).
+1. **riscos-crossdev toolchain 1.3** (`riscos-crossdev-toolchain-1.3-x86_64-linux.tar.xz`,
+   sha256 bcdb35fb…). It has **riscos-unixlib 5.0.3.2** built in (from the
+   release's `unixlib-riscos.diff`, the copy in `patches/unixlib/`) and links
+   statically by default. Nothing needs copying into it any more. Its
+   `elf2aif` has the fix for big images.
+2. **riscos-mesa devkit 20.3.5-12** (OSMesa, EGL, GLU; `bin/mkrozip.py`).
+   Until -12 is released the test builds use its pre-release devkit 12f;
+   20.3.5-11 also works (without the faster fog).
 
 ```
-export RISCOS_TOOLCHAIN=/path/to/riscos-crossdev-toolchain-1.1-x86_64-linux
-export RISCOS_DEVKIT=/path/to/riscos-mesa-devkit-20.3.5-11
+export RISCOS_TOOLCHAIN=/path/to/riscos-crossdev-toolchain-1.3-x86_64-linux
+export RISCOS_DEVKIT=/path/to/riscos-mesa-devkit-12f
 build/build.sh
 build/package.sh m1-2
 ```
@@ -46,8 +46,9 @@ unzip over an !YSFlight of the same version.
 
 - `tools/check-stack-probes.py ELF`: must report 0 unprobed frames.
 - riscos-crossdev `checks/check-fpu.sh ELF`: no VFPv4 instructions.
-- UnixLib's ticker block: 640 bytes for 5.0.3.1 (riscos-crossdev 1.1's
-  `check-unixlib.sh` still expects 472, from 5.0.1-5.0.3).
+- UnixLib's ticker block: 640 bytes (5.0.3.1 and 5.0.3.2; riscos-crossdev
+  1.3's `check-unixlib.sh` expects 640).
+- riscos-crossdev `checks/check-static.sh ELF`: statically linked.
 
 ## Window code test on Linux
 

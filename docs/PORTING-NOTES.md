@@ -160,7 +160,21 @@ Per frame at 640x480, F-18E, Aomori field:
   recomputed when a vertex's colour changes, fog pixels read/written as
   words, faster 2D texturing. Host, same seed, with patch 12: runway 173M
   (12d) -> 162M, 10000 ft 102M -> 95M (-6 to -7%). Pictures: 10000 ft at
-  most 1 level apart; runway 19 pixels at one cloud edge.
+  most 1 level apart; runway 19 pixels at one cloud edge (run-to-run noise,
+  see below).
+- **riscos-mesa 20.3.5-14rc1 A/B (M2 test 11):** NEON bilinear textured
+  spans, NEON SRC_ALPHA blending and colour spans, the GLSL JIT. The NEON
+  code isn't built on an x86 host, so the host shows only the C side: with
+  particles and ground texture off, runway 162M and 10000 ft 95M with both
+  20.3.5-13 and 14rc1 (10000 ft frames identical). Where the Pi can gain:
+  with those settings texturing is almost nothing, `interpolate_int_colors`
+  is 6-9%, `blend_transparency_ubyte` 1-3%. With the **ground texture on**
+  (290M / 149M) `fast_persp_span` is 40% of the runway frame: that's what
+  the NEON texture spans speed up, so the ground texture may become
+  affordable. Pi figures: see the test 11 handoff reply.
+- **The runway frame is not bit-reproducible:** two runs of the same binary
+  and library differ in up to ~160 pixels (rows 160-250, left half) and by
+  ~0.01% in instructions. Compare pictures at 10000 ft, which is exact.
 - **Hot paths in the gl1 code (M2 test 5, ysce 12):** with particles and
   the ground texture off, the full-screen sky cylinder (FsGroundSky::DrawByFog)
   and the ground mesh were drawn with GL fog (general span path) and, like

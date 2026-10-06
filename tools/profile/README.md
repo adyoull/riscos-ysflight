@@ -21,8 +21,10 @@ used.
 - `run.sh NAME STARTPOS "KEY VALUE;..."`: a free flight (F-18E, AOMORI) with
   those `flight.cfg` lines, under callgrind. It prints the instructions per
   frame.
-  - Instruction counts are the same from run to run; wall-clock time in a
-    shared container is not.
+  - Instruction counts agree from run to run to about 0.01%; wall-clock
+    time in a shared container doesn't. The 10000 ft frame is the same bit
+    for bit every run; the runway frame isn't (up to ~160 pixels differ),
+    so compare pictures at 10000 ft.
   - `PROF_SEED` (default 1) seeds the random numbers before the first
     frame, so the weather and clouds are the same in every run and two
     builds can be compared exactly, picture included.

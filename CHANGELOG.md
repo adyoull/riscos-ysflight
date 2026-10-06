@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased: M2 test 11, A/B (2026-10-06)
+
+- Two builds of the same source (test 10's), for riscos-mesa's A/B of its
+  release candidate: **A** linked with the riscos-mesa 20.3.5-13 release,
+  **B** with **20.3.5-14rc1** (NEON textures, blending and colour spans; a
+  GLSL JIT for the OpenGL 2 add-on). B is a test build only, not for
+  release. Each has a GL2 add-on.
+- Notes: the runway profile frame isn't bit-reproducible on the host;
+  compare pictures at 10000 ft.
+
 ## Unreleased: M2 test 10 (2026-10-05)
 
 - **Linked with the riscos-mesa 20.3.5-12 release** (was its pre-release

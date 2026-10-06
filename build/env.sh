@@ -1,7 +1,10 @@
 # Source this: . build/env.sh
 # Settings for the riscos-ysflight build scripts. Each can be set first.
-#   RISCOS_TOOLCHAIN  riscos-crossdev toolchain (1.3: UnixLib 5.0.3.2 built in)
-#   RISCOS_DEVKIT     riscos-mesa devkit (20.3.5-12)
+#   RISCOS_TOOLCHAIN  riscos-crossdev toolchain 1.3 with UnixLib 5.0.3.3's
+#                     libunixlib.a copied in (BUILDING.md)
+#   RISCOS_DEVKIT     riscos-mesa devkit (20.3.5-13)
+#   UNIXLIB_SHA256    the libunixlib.a the build must link (5.0.3.3 release);
+#                     =any skips the check
 #   WORK              where the upstream clones and the build go (./work)
 #   YSCE_REF / PUBLIC_REF  upstream commits; =HEAD uses whatever is checked out
 RYS_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -9,9 +12,10 @@ RYS_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 : "${YSCE_REF:=231e711}"
 : "${PUBLIC_REF:=1b13297}"
 : "${JOBS:=$(nproc)}"
+: "${UNIXLIB_SHA256:=e24f16c3f4612aae3871ceff521ab86b0d3ac4cc689d734e0e4085d02c774adf}"
 : "${RISCOS_TOOLCHAIN:?set RISCOS_TOOLCHAIN to the riscos-crossdev toolchain}"
 : "${RISCOS_DEVKIT:?set RISCOS_DEVKIT to the riscos-mesa devkit}"
-export RYS_DIR WORK YSCE_REF PUBLIC_REF JOBS RISCOS_TOOLCHAIN RISCOS_DEVKIT
+export RYS_DIR WORK YSCE_REF PUBLIC_REF JOBS RISCOS_TOOLCHAIN RISCOS_DEVKIT UNIXLIB_SHA256
 export PATH="$RISCOS_TOOLCHAIN/bin:$PATH"
 
 # use_ref DIR REF: check out REF in a clean clone. A clone with changes is

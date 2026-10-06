@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased: M2 test 12 (2026-10-06)
+
+- **Linked with riscos-unixlib 5.0.3.3** (fixes from its code audit: threads
+  waiting inside read/write and stdio, fork with threads, the services
+  database, a heap-area cap, swprintf, exit codes 128-255). No struct
+  changes; PThreadTicker stays 0.03, ticker block 640 bytes. riscos-crossdev
+  1.3 still carries 5.0.3.2, so the release `libunixlib.a` is copied into a
+  copy of the toolchain, and `build.sh` now checks which one it links.
+- **riscos-mesa 20.3.5-13 release** (was 20.3.5-12; the same speed for
+  fixed-function drawing, as test 11's A build).
+
 ## Unreleased: M2 test 11, A/B (2026-10-06)
 
 - Two builds of the same source (test 10's), for riscos-mesa's A/B of its

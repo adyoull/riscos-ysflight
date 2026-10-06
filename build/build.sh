@@ -6,6 +6,12 @@
 # Re-running is safe: applied patches are skipped and make carries on.
 set -euo pipefail
 . "$(dirname "$0")/env.sh"
+# The UnixLib that gets linked: the release named in env.sh, not whatever the
+# toolchain happens to carry.
+UL="$RISCOS_TOOLCHAIN/arm-riscos-gnueabihf/lib/libunixlib.a"
+if [ "$UNIXLIB_SHA256" != any ] && [ "$(sha256sum < "$UL" | cut -d' ' -f1)" != "$UNIXLIB_SHA256" ]; then
+  echo "$UL is not the UnixLib release in build/env.sh (see BUILDING.md)" >&2; exit 1
+fi
 mkdir -p "$WORK"; cd "$WORK"
 [ -d YSCE ] || git clone -q https://github.com/YSCEDC/YSCE.git
 [ -d ysce_public ] || git clone -q https://github.com/YSCEDC/ysce_public.git

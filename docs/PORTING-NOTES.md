@@ -1,8 +1,8 @@
 # Porting notes
 
 YSCE `231e711` (2026-02-08) and ysce_public `1b13297` (2025-05-19), built with
-GCCSDK GCC 10 (riscos-crossdev 1.3), riscos-unixlib 5.0.3.2 and the
-riscos-mesa devkit 20.3.5-12.
+GCCSDK GCC 10 (riscos-crossdev 1.3), riscos-unixlib 5.0.3.3 and the
+riscos-mesa devkit 20.3.5-13.
 
 ## Patches
 
@@ -53,7 +53,7 @@ riscos-mesa devkit 20.3.5-12.
 
 ## UnixLib
 
-- Linked with riscos-unixlib 5.0.3.2 (`patches/unixlib/unixlib-riscos.diff`
+- Linked with riscos-unixlib 5.0.3.3 (`patches/unixlib/unixlib-riscos.diff`
   is its change set). Heap in dynamic areas past 128 MB; ticker block 640 bytes.
 - Threads run as upstream (the owner's call, 2026-10-01): riscos-unixlib
   5.0.3.1 keeps switching threads through Wimp_Poll, so the simulation's

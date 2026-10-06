@@ -4,16 +4,25 @@ Needs a Linux x86-64 host with git, cmake, make, python3 with Pillow
 (`python3-pil`, used by package.sh to shrink the menu pictures) and:
 
 1. **riscos-crossdev toolchain 1.3** (`riscos-crossdev-toolchain-1.3-x86_64-linux.tar.xz`,
-   sha256 bcdb35fb…). It has **riscos-unixlib 5.0.3.2** built in (from the
-   release's `unixlib-riscos.diff`, the copy in `patches/unixlib/`) and links
-   statically by default. Nothing needs copying into it any more. Its
-   `elf2aif` has the fix for big images.
-2. **riscos-mesa devkit 20.3.5-12** (`riscos-mesa-devkit-20.3.5-12.tgz`,
-   sha256 07f1066b…; OSMesa, EGL, GLU; `bin/mkrozip.py`).
+   sha256 bcdb35fb…). It links statically by default and its `elf2aif` has
+   the fix for big images. It carries riscos-unixlib 5.0.3.2; until a
+   riscos-crossdev release packages 5.0.3.3, copy **riscos-unixlib 5.0.3.3**'s
+   release `libunixlib.a` (sha256 e24f16c3…) over the toolchain's (in a copy
+   of the toolchain):
+   ```
+   cp -a riscos-crossdev-toolchain-1.3-x86_64-linux riscos-crossdev-toolchain-1.3-unixlib-5.0.3.3
+   cp libunixlib.a riscos-crossdev-toolchain-1.3-unixlib-5.0.3.3/arm-riscos-gnueabihf/lib/libunixlib.a
+   ```
+   5.0.3.3's public headers are the same as 5.0.3.2's. `build.sh` stops if
+   the toolchain's `libunixlib.a` isn't the one pinned in `build/env.sh`
+   (`UNIXLIB_SHA256`). `patches/unixlib/unixlib-riscos.diff` is 5.0.3.3's
+   change set.
+2. **riscos-mesa devkit 20.3.5-13** (`riscos-mesa-devkit-20.3.5-13.tgz`,
+   sha256 329dc543…; OSMesa, EGL, GLU; `bin/mkrozip.py`).
 
 ```
-export RISCOS_TOOLCHAIN=/path/to/riscos-crossdev-toolchain-1.3-x86_64-linux
-export RISCOS_DEVKIT=/path/to/riscos-mesa-devkit-20.3.5-12
+export RISCOS_TOOLCHAIN=/path/to/riscos-crossdev-toolchain-1.3-unixlib-5.0.3.3
+export RISCOS_DEVKIT=/path/to/riscos-mesa-devkit-20.3.5-13
 build/build.sh
 build/package.sh m1-2
 ```
@@ -45,7 +54,7 @@ unzip over an !YSFlight of the same version.
 
 - `tools/check-stack-probes.py ELF`: must report 0 unprobed frames.
 - riscos-crossdev `checks/check-fpu.sh ELF`: no VFPv4 instructions.
-- UnixLib's ticker block: 640 bytes (5.0.3.1 and 5.0.3.2; riscos-crossdev
+- UnixLib's ticker block: 640 bytes (5.0.3.1 to 5.0.3.3; riscos-crossdev
   1.3's `check-unixlib.sh` expects 640).
 - riscos-crossdev `checks/check-static.sh ELF`: statically linked.
 

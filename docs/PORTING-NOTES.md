@@ -2,7 +2,7 @@
 
 YSCE `231e711` (2026-02-08) and ysce_public `1b13297` (2025-05-19), built with
 GCCSDK GCC 10 (riscos-crossdev 1.3), riscos-unixlib 5.0.3.3 and the
-riscos-mesa devkit 20.3.5-13.
+riscos-mesa devkit 20.3.5-14.
 
 ## Patches
 
@@ -21,6 +21,7 @@ riscos-mesa devkit 20.3.5-13.
 | ysce 11 riscos-gl2-target | main/CMakeLists.txt | optional OpenGL 2 (GLSL) game, to compare (GL2=1) | |
 | ysce 12 riscos-software-gl-drawing | graphics/gl/fsgroundskygl.cpp, fsopengl.*, core/fssimulation.cpp, scenery/ysscenerygl.cpp (+ no-ops in gl2/null/d3d9) | sky/ground drawn with per-vertex fog and no blend; blending off for the opaque passes (speed, below) | maybe (as an option) |
 | ysce 13 riscos-joystick | ysjoystick/src/riscos/ysjoyreader.cpp (new), its CMakeLists | joysticks: USBJoystick 0.23+ slot API (all axes, hat, 32 buttons), else Joystick_Read stick 0 | |
+| ysce 14 riscos-sound | platform/riscos/fsairsoundriscos.cpp, its CMakeLists | sound through UnixLib's /dev/dsp (below) | |
 | ysce_public 01 unaligned-stl | ysclass/src/ysshellstl.cpp | unaligned float load in binary STL | yes |
 | ysce_public 02 thread-fixes | ysclass11/src/ysthreadpool.cpp, ysport/src/ysthread.cpp | missing `<cstdio>`; `RunParallel` joined one thread too many | yes |
 | ysce_public 03 riscos-cmake | yssimplesound, ysgl CMakeLists | silent sound for now; no GLSL host tools when cross-compiling | |
@@ -107,13 +108,38 @@ design. Taken from riscos-mesa's freeglut back end and the other ports:
   latch, the render scaling, the click position or the shutdown restart each
   fails it.
 
+## Sound (riscos1)
+
+- Upstream's Linux sound is a plug-in loaded with dlopen that plays through
+  ALSA. UnixLib has no dlopen and RISC OS no ALSA, so ysce 14 does the
+  plug-in's job in `platform/riscos/fsairsoundriscos.cpp`, through
+  UnixLib's OSS `/dev/dsp` (riscos-unixlib 5.0.3.3, which plays it through
+  SharedSoundBuffer, else DigitalRenderer; `!Run` loads the SSB modules if
+  they're installed).
+- The 37 WAVs (8-bit 8 kHz to 16-bit 22050 Hz, mono) are converted once at
+  start to 16-bit mono 22050 Hz with YSFlight's own `YsWavFile` (~1 MB).
+- Each frame `FsSoundKeepPlaying` tops the queue up to 160 ms, with
+  `O_NONBLOCK` and no more than `SNDCTL_DSP_GETOSPACE` allows, so drawing
+  never waits for sound; a frame slower than 160 ms leaves a short gap. The
+  looping sound is chosen as the ALSA plug-in does (gun, alarm, else the
+  engine at 10 power levels); up to 4 one-shots are mixed over it (ALSA
+  played one thing at a time). A new engine level keeps the loop position.
+- The device is opened only when something plays and closed by
+  `FsSoundStopAll` (between flights) and when sound is off.
+- No ATC voice: upstream's voice plug-in is an empty skeleton.
+- **Host test:** `tests/host-sound/run.sh` (fake `/dev/dsp` with a playback
+  clock, the real WAVs): format, no underrun at 45-120 ms frames, never more
+  than 160 ms queued or more than GETOSPACE offered, the exact mixed
+  samples, level changes, StopAll, master switch, a missing device. Breaking
+  the loop carry-over, the queue target, the GETOSPACE cap or O_NONBLOCK
+  each fails it.
+
 ## Still null (later milestones)
 
-- Sound (link the plug-ins in; SDL2 audio) and a FontManager system font
-  (the bitmap-font stand-in is Latin-1 only).
+- A FontManager system font (the bitmap-font stand-in is Latin-1 only).
 - Loading a flight doesn't poll the Wimp, so the desktop pauses while a
   map loads (OpenTTD/Warzone lesson: poll every 50 ms during loading).
-- Joystick: null. Server list: compiled out.
+- Server list: compiled out.
 
 ## Speed (M2 test 4)
 

@@ -17,12 +17,12 @@ Needs a Linux x86-64 host with git, cmake, make, python3 with Pillow
    the toolchain's `libunixlib.a` isn't the one pinned in `build/env.sh`
    (`UNIXLIB_SHA256`). `patches/unixlib/unixlib-riscos.diff` is 5.0.3.3's
    change set.
-2. **riscos-mesa devkit 20.3.5-13** (`riscos-mesa-devkit-20.3.5-13.tgz`,
-   sha256 329dc543…; OSMesa, EGL, GLU; `bin/mkrozip.py`).
+2. **riscos-mesa devkit 20.3.5-14** (`riscos-mesa-devkit-20.3.5-14.tgz`,
+   sha256 3c3c9bb0…; OSMesa, EGL, GLU; `bin/mkrozip.py`).
 
 ```
 export RISCOS_TOOLCHAIN=/path/to/riscos-crossdev-toolchain-1.3-unixlib-5.0.3.3
-export RISCOS_DEVKIT=/path/to/riscos-mesa-devkit-20.3.5-13
+export RISCOS_DEVKIT=/path/to/riscos-mesa-devkit-20.3.5-14
 build/build.sh
 build/package.sh m1-2
 ```
@@ -51,6 +51,9 @@ unzip over an !YSFlight of the same version.
   python3-pil, ImageMagick for the interlaced cases): the RISC OS PNG path
   (zlib, ysce_public patch 10) must decode every runtime PNG and ~200 test
   images byte for byte like the original decoder.
+- `tests/host-sound/run.sh` (WORK as for the build): the RISC OS sound
+  back end (ysce patch 14) against a fake `/dev/dsp` with a playback clock,
+  using the game's WAV files.
 
 - `tools/check-stack-probes.py ELF`: must report 0 unprobed frames.
 - riscos-crossdev `checks/check-fpu.sh ELF`: no VFPv4 instructions.

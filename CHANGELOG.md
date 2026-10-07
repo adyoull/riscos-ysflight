@@ -1,5 +1,24 @@
 # Changelog
 
+## riscos1 (2026-10-07): first release
+
+YSFlight Community Edition (YSCE `231e711`, ysce_public `1b13297`) for
+RISC OS 5, in a desktop window, with sound and joysticks. Everything in the
+M1 and M2 test builds below, plus:
+
+- **Sound** (ysce patch 14) through UnixLib's `/dev/dsp`: engines (10
+  power levels, jet, afterburner, propeller), gun, stall/missile/terrain
+  alarms and the one-shot effects (bangs, touchdown, gear, missiles...), up
+  to 4 at once over the engine. Played through SharedSoundBuffer when its
+  modules are installed (`!Run` loads them), else DigitalRenderer. The game
+  never waits for the sound.
+- **riscos-mesa 20.3.5-14** (NEON texturing, blending and colour fills):
+  on a Pi 4 at 640x480 the A/B test went from 18.7 to 22.1 frames a second.
+- riscos-unixlib 5.0.3.3; riscos-crossdev 1.3.
+- Known gaps: the desktop's fonts (YSFlight's bitmap font, Latin-1 only),
+  the online server list, ATC voice (none upstream either); the desktop
+  pauses while a flight loads.
+
 ## Unreleased: M2 test 12 (2026-10-06)
 
 - **Linked with riscos-unixlib 5.0.3.3** (fixes from its code audit: threads

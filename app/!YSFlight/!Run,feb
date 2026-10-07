@@ -1,4 +1,4 @@
-| !Run for !YSFlight (test build: the game in a desktop window).
+| !Run for !YSFlight: YSFlight Community Edition for RISC OS.
 | Lines starting with | are comments.
 Set YSFlight$Dir <Obey$Dir>
 
@@ -15,6 +15,13 @@ RMEnsure PThreadTicker 0.01 RMLoad <YSFlight$Dir>.PThrTicker
 | A hardware overlay can show the picture (*Set EGL$Overlay on): load
 | ROOL's VideoOverlay module if it's there. YSFlight runs without it.
 RMEnsure VideoOverlay 0.00 IfThere System:Modules.VideoOverlay Then RMLoad System:Modules.VideoOverlay
+| Sound goes through UnixLib's /dev/dsp. With John Duffell's
+| SharedSoundBuffer modules (ssb.zip, from RDPClient's web page) it is
+| mixed with other programs' sound; without them UnixLib uses
+| DigitalRenderer, if it's there.
+RMEnsure SharedSound 1.07 IfThere System:Modules.SSound Then RMLoad System:Modules.SSound
+RMEnsure StreamManager 0.03 IfThere System:Modules.StreamMan Then RMLoad System:Modules.StreamMan
+RMEnsure SharedSoundBuffer 0.07 IfThere System:Modules.SSBuffer Then RMLoad System:Modules.SSBuffer
 
 | Messages go to this file (printing from a desktop program would open
 | a command window). The |< keeps <Wimp$ScrapDir> for UnixLib to expand.

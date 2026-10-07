@@ -1,11 +1,12 @@
-!YSFlight - test build
-======================
+!YSFlight - riscos1
+===================
 
 YSFlight Community Edition, a free flight simulator, for RISC OS.
-This is an early test build: the game runs in a desktop window, drawn
-with software OpenGL (riscos-mesa). Not done yet: sound, the desktop's
-fonts (the text uses YSFlight's own bitmap font, Latin-1 only) and the
-online server list.
+The game runs in a desktop window, drawn with software OpenGL
+(riscos-mesa). Not done yet: the desktop's fonts (the text uses
+YSFlight's own bitmap font, Latin-1 only), the online server list and
+the air traffic control voice (YSFlight has none on other systems
+either).
 
 Needs: RISC OS 5 on an ARMv7 machine with VFP (Raspberry Pi 2, 3, 4,
 400), SharedUnixLibrary 1.16 or later and ARMEABISupport (PackMan).
@@ -15,6 +16,15 @@ Double-click !YSFlight to start. Messages, and a report if it crashes,
 go to the file YSFlightLog in the scrap directory
 (<Wimp$ScrapDir>.YSFlightLog). Settings are kept in
 <Choices$Write>.YSFlight.
+
+Sound: engines, guns, alarms and the other effects play through
+UnixLib's /dev/dsp. Best with John Duffell's SharedSoundBuffer modules
+(SharedSound 1.07, StreamManager 0.03 and SharedSoundBuffer 0.07: merge
+the !System from ssb.zip, on Andrew Sellors' RDPClient page,
+https://orac.co.uk/software/rdpclient/rdpclient.html); !Run loads them,
+and the sound is then mixed with other programs'. Without them it uses
+DigitalRenderer, if it's loaded. The Sound tick box (Option menu)
+switches it off.
 
 Keys and mouse: as YSFlight on other systems. Select = left button,
 Menu = middle, Adjust = right. Click in the window to give it the

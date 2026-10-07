@@ -1,0 +1,524 @@
+RISC OS: sound through UnixLib's /dev/dsp.
+
+The Linux version loads a sound plug-in with dlopen and plays it through
+ALSA; RISC OS has neither, so the port was silent.
+platform/riscos/fsairsoundriscos.cpp now does the plug-in's job itself:
+- loads the same WAV files (sounddll/yswavfile, now built into the RISC OS
+  platform library), converted once to 16-bit mono 22050 Hz;
+- picks the looping sound as upstream's ALSA plug-in does (gun, else alarm,
+  else the engine at one of 10 power levels) and mixes up to 4 one-shot
+  sounds over it (the ALSA plug-in played only one thing at a time);
+  a new engine level carries on at the same place in the loop;
+- writes to /dev/dsp opened with O_NONBLOCK, from FsSoundKeepPlaying (once a
+  frame), keeping 160 ms queued and never offering more than GETOSPACE
+  says fits, so the game never waits for the sound;
+- the device is opened only when there's something to play, and closed
+  (queue dropped) by FsSoundStopAll and when sound is switched off. If it
+  can't be opened, that's logged and tried again 200 frames later.
+UnixLib (5.0.3.3) plays /dev/dsp through SharedSoundBuffer when its
+modules are loaded, else DigitalRenderer. No voice: upstream's voice
+plug-in is an empty skeleton.
+Host test: tests/host-sound (fake /dev/dsp with a playback clock).
+
+--- a/src/platform/riscos/CMakeLists.txt
++++ b/src/platform/riscos/CMakeLists.txt
+@@ -168,6 +168,7 @@
+ ${platform_SRCS}
+ fsriscos.cpp
+ fsairsoundriscos.cpp
++../../sounddll/yswavfile/yswavfile.cpp
+ )
+ 
+ #ysdnmnownd.cpp
+--- a/src/platform/riscos/fsairsoundriscos.cpp
++++ b/src/platform/riscos/fsairsoundriscos.cpp
+@@ -1,68 +1,460 @@
+-/* RISC OS port: copied from platform/nownd/fsairsoundnownd.cpp (silent).
+-   M3 links the sound and voice plug-ins in directly (UnixLib has no dlopen). */
++/* RISC OS port: YSFlight's sound through UnixLib's /dev/dsp.
++
++   The Linux version loads its sound plug-in with dlopen and plays through
++   ALSA; RISC OS has neither. This file does the plug-in's job in the
++   program itself: it loads the same WAV files, mixes the looping
++   "environment" sound (engine, gun or alarm) with the one-shot sounds,
++   and writes 16-bit mono at 22050 Hz to /dev/dsp. UnixLib plays that
++   through SharedSoundBuffer when its modules are loaded (mixed with other
++   programs' sound), else through DigitalRenderer.
++
++   FsSoundKeepPlaying() is called once a frame. Each call tops the queue
++   up to TARGET_MS of sound, never waiting: /dev/dsp is opened with
++   O_NONBLOCK, and no more is written than GETOSPACE says fits. One-shot
++   sounds are mixed into what is written next, so they start within the
++   queued time (at most TARGET_MS).
++
++   There's no voice output: upstream's voice plug-in is an empty skeleton. */
+ #include <stdio.h>
+ #include <string.h>
+ #include <stdlib.h>
+-#include <time.h>
++#include <errno.h>
++#include <fcntl.h>
++#include <unistd.h>
++#include <sys/ioctl.h>
++#include <sys/soundcard.h>
++
++#include "../../common/fsairsound.h"
++#include "../../sounddll/yswavfile/yswavfile.h"
++
++#ifdef YS_RISCOS_SOUND_TEST
++/* The host test (tests/host-sound) provides a fake /dev/dsp. */
++extern "C" int fake_dsp_open(const char *path,int flags);
++extern "C" int fake_dsp_ioctl(int fd,unsigned long req,void *arg);
++extern "C" int fake_dsp_write(int fd,const void *buf,int n);
++extern "C" int fake_dsp_close(int fd);
++#define DSP_OPEN fake_dsp_open
++#define DSP_IOCTL fake_dsp_ioctl
++#define DSP_WRITE fake_dsp_write
++#define DSP_CLOSE fake_dsp_close
++#else
++#define DSP_OPEN open
++#define DSP_IOCTL ioctl
++#define DSP_WRITE write
++#define DSP_CLOSE close
++#endif
++
++////////////////////////////////////////////////////////////
+ 
++namespace
++{
+ 
+-#include <ysclass.h>
+-#include <fs.h>
++const int RATE=22050;              // every WAV is converted to this, 16-bit mono
++const int TARGET_MS=160;           // sound kept queued: a slow frame is ~100 ms
++const int TARGET_BYTES=RATE*2*TARGET_MS/1000;
++const int MIN_WRITE_BYTES=512;     // don't bother with less
++const int FRAGMENT=(16<<16)|11;    // 16 fragments of 2048 bytes (46 ms each)
++const int MAX_ONESHOT=4;           // one-shots playing at once
++const int REOPEN_DELAY=200;        // KeepPlaying calls before trying a failed open again
++
++struct Voice
++{
++	const YsWavFile *wav;
++	unsigned int pos;              // in samples
++};
++
++YSBOOL masterSwitch=YSTRUE,environSwitch=YSTRUE,oneTimeSwitch=YSTRUE;
++
++YsWavFile jetWav[10],afterBurnerWav,propWav[10];
++YsWavFile machineGunWav[FSSND_NUM_MACHINEGUNTYPE];
++YsWavFile alarmWav[FSSND_NUM_ALARMTYPE];
++YsWavFile oneTimeWav[FSSND_NUM_ONETIMETYPE];
++
++FSSND_ENGINETYPE engineType=FSSND_ENGINE_SILENT;
++double enginePower=0.0;
++FSSND_MACHINEGUNTYPE machineGunType=FSSND_MACHINEGUN_SILENT;
++FSSND_ALARMTYPE alarmType=FSSND_ALARM_SILENT;
++
++Voice envVoice={NULL,0};
++Voice oneShot[MAX_ONESHOT];
++
++int dsp=-1;
++int openWait=0;                    // calls to wait before opening again
++YSBOOL loaded=YSFALSE;
++short mixBuf[TARGET_BYTES/2];
++int mixAcc[TARGET_BYTES/2];
++
++void Load(YsWavFile &wav,const char fn[])
++{
++	if(YSOK==wav.LoadWav(fn))
++	{
++		wav.ConvertToMono();
++		wav.ConvertTo16Bit();
++		wav.ConvertToSigned();
++		wav.Resample(RATE);
++	}
++}
++
++void LoadAll(void)
++{
++	char fn[64];
++	for(int i=0; i<10; ++i)
++	{
++		sprintf(fn,"sound/engine%d.wav",i);
++		Load(jetWav[i],fn);
++		sprintf(fn,"sound/prop%d.wav",i);
++		Load(propWav[i],fn);
++	}
++	Load(afterBurnerWav,"sound/burner.wav");
++
++	Load(machineGunWav[(int)FSSND_MACHINEGUN_MACHINEGUN],"sound/gun.wav");
++
++	Load(alarmWav[(int)FSSND_ALARM_STALL],"sound/stallhorn.wav");
++	Load(alarmWav[(int)FSSND_ALARM_MISSILE],"sound/warning.wav");
++	Load(alarmWav[(int)FSSND_ALARM_TERRAIN],"sound/gearhorn.wav");
++
++	Load(oneTimeWav[(int)FSSND_ONETIME_DAMAGE],"sound/damage.wav");
++	Load(oneTimeWav[(int)FSSND_ONETIME_MISSILE],"sound/missile.wav");
++	Load(oneTimeWav[(int)FSSND_ONETIME_BANG],"sound/bang.wav");
++	Load(oneTimeWav[(int)FSSND_ONETIME_BLAST],"sound/blast.wav");
++	Load(oneTimeWav[(int)FSSND_ONETIME_TOUCHDWN],"sound/touchdwn.wav");
++	Load(oneTimeWav[(int)FSSND_ONETIME_HIT],"sound/hit.wav");
++	Load(oneTimeWav[(int)FSSND_ONETIME_BLAST2],"sound/blast2.wav");
++	Load(oneTimeWav[(int)FSSND_ONETIME_GEARUP],"sound/retractldg.wav");
++	Load(oneTimeWav[(int)FSSND_ONETIME_GEARDOWN],"sound/extendldg.wav");
++	Load(oneTimeWav[(int)FSSND_ONETIME_BOMBSAWAY],"sound/bombsaway.wav");
++	Load(oneTimeWav[(int)FSSND_ONETIME_ROCKET],"sound/rocket.wav");
++	Load(oneTimeWav[(int)FSSND_ONETIME_NOTICE],"sound/notice.wav");
++}
++
++YSBOOL Playable(const YsWavFile *wav)
++{
++	return (NULL!=wav && 0<wav->NTimeStep() && 16==wav->BitPerSample() &&
++	        YSTRUE!=wav->Stereo()) ? YSTRUE : YSFALSE;
++}
++
++void ClearVoices(void)
++{
++	envVoice.wav=NULL;
++	envVoice.pos=0;
++	for(int i=0; i<MAX_ONESHOT; ++i)
++	{
++		oneShot[i].wav=NULL;
++		oneShot[i].pos=0;
++	}
++}
++
++void CloseDsp(void)
++{
++	if(0<=dsp)
++	{
++		DSP_IOCTL(dsp,SNDCTL_DSP_RESET,NULL);   // drop what's queued: close doesn't wait
++		DSP_CLOSE(dsp);
++		dsp=-1;
++	}
++}
++
++YSBOOL OpenDsp(void)
++{
++	if(0<=dsp)
++	{
++		return YSTRUE;
++	}
++	if(0<openWait)
++	{
++		--openWait;
++		return YSFALSE;
++	}
++	dsp=DSP_OPEN("/dev/dsp",O_WRONLY|O_NONBLOCK);
++	if(0>dsp)
++	{
++		printf("Sound: can't open /dev/dsp (%s); no sound.\n",strerror(errno));
++		openWait=REOPEN_DELAY;
++		return YSFALSE;
++	}
++	int fmt=AFMT_S16_LE,ch=1,rate=RATE,frag=FRAGMENT;
++	DSP_IOCTL(dsp,SNDCTL_DSP_SETFRAGMENT,&frag);
++	if(0!=DSP_IOCTL(dsp,SNDCTL_DSP_SETFMT,&fmt) || AFMT_S16_LE!=fmt ||
++	   0!=DSP_IOCTL(dsp,SNDCTL_DSP_CHANNELS,&ch) || 1!=ch ||
++	   0!=DSP_IOCTL(dsp,SNDCTL_DSP_SPEED,&rate))
++	{
++		printf("Sound: /dev/dsp doesn't take 16-bit mono; no sound.\n");
++		DSP_CLOSE(dsp);
++		dsp=-1;
++		openWait=REOPEN_DELAY;
++		return YSFALSE;
++	}
++	if(rate!=RATE)
++	{
++		printf("Sound: /dev/dsp plays at %d Hz, not %d.\n",rate,RATE);
++	}
++	printf("Sound: /dev/dsp open, %d Hz 16-bit mono.\n",RATE);
++	return YSTRUE;
++}
++
++// The looping sound for this frame, as upstream's ALSA plug-in picks it.
++const YsWavFile *EnvironWav(void)
++{
++	if(YSTRUE!=environSwitch)
++	{
++		return NULL;
++	}
++	if(FSSND_MACHINEGUN_SILENT!=machineGunType)
++	{
++		return &machineGunWav[(int)machineGunType];
++	}
++	if(FSSND_ALARM_SILENT!=alarmType)
++	{
++		return &alarmWav[(int)alarmType];
++	}
++	int level=(int)(enginePower*10.0);
++	if(level<0)
++	{
++		level=0;
++	}
++	else if(9<level)
++	{
++		level=9;
++	}
++	switch(engineType)
++	{
++	case FSSND_ENGINE_JETNORMAL:
++		return &jetWav[level];
++	case FSSND_ENGINE_JETAFTERBURNER:
++		return &afterBurnerWav;
++	case FSSND_ENGINE_PROPELLER:
++	case FSSND_ENGINE_TURBOPROP:
++	case FSSND_ENGINE_HELICOPTER:
++		return &propWav[level];
++	default:
++		return NULL;
++	}
++}
++
++// Add n samples of a voice into acc. A looping voice wraps; a one-shot
++// ends (its wav set to NULL).
++void MixVoice(Voice &v,int acc[],int n,YSBOOL loop)
++{
++	const unsigned int len=v.wav->NTimeStep();
++	const short *src=(const short *)v.wav->DataPointer();
++	int i=0;
++	while(i<n)
++	{
++		if(len<=v.pos)
++		{
++			if(YSTRUE!=loop)
++			{
++				v.wav=NULL;
++				v.pos=0;
++				return;
++			}
++			v.pos=0;
++		}
++		int run=(int)(len-v.pos);
++		if(n-i<run)
++		{
++			run=n-i;
++		}
++		for(int k=0; k<run; ++k)
++		{
++			acc[i+k]+=src[v.pos+k];
++		}
++		i+=run;
++		v.pos+=run;
++	}
++	if(YSTRUE!=loop && len<=v.pos)
++	{
++		v.wav=NULL;
++		v.pos=0;
++	}
++}
+ 
+-#include "../../voicedll/fsvoiceenum.h"
++}  // namespace
+ 
+ ////////////////////////////////////////////////////////////
+ 
+-
+ void FsSoundInitialize(void)
+ {
++	if(YSTRUE!=loaded)
++	{
++		LoadAll();
++		loaded=YSTRUE;
++	}
++	ClearVoices();
+ }
+ 
+-
+ void FsSoundTerminate(void)
+ {
++	ClearVoices();
++	CloseDsp();
+ }
+ 
+-
+ void FsSoundSetMasterSwitch(YSBOOL sw)
+ {
++	masterSwitch=sw;
++	if(YSTRUE!=sw)
++	{
++		ClearVoices();
++		CloseDsp();
++	}
+ }
+ 
+ void FsSoundSetEnvironmentalSwitch(YSBOOL sw)
+ {
++	environSwitch=sw;
+ }
+ 
+ void FsSoundSetOneTimeSwitch(YSBOOL sw)
+ {
++	oneTimeSwitch=sw;
+ }
+ 
+-
+ void FsSoundStopAll(void)
+ {
++	ClearVoices();
++	engineType=FSSND_ENGINE_SILENT;
++	machineGunType=FSSND_MACHINEGUN_SILENT;
++	alarmType=FSSND_ALARM_SILENT;
++	CloseDsp();     // opened again by the next KeepPlaying: frees the stream between flights
+ }
+ 
+ void FsSoundSetVehicleName(const char [])
+ {
+ }
+ 
+-void FsSoundSetEngine(FSSND_ENGINETYPE ,int ,const double )
+-{
+-}
+-
+-void FsSoundSetMachineGun(FSSND_MACHINEGUNTYPE )
+-{
+-}
+-
+-void FsSoundSetAlarm(FSSND_ALARMTYPE )
++void FsSoundSetEngine(FSSND_ENGINETYPE type,int ,const double power)
+ {
++	engineType=type;
++	enginePower=power;
+ }
+ 
+-void FsSoundSetOneTime(FSSND_ONETIMETYPE )
++void FsSoundSetMachineGun(FSSND_MACHINEGUNTYPE type)
+ {
++	machineGunType=type;
++}
++
++void FsSoundSetAlarm(FSSND_ALARMTYPE type)
++{
++	alarmType=type;
++}
++
++void FsSoundSetOneTime(FSSND_ONETIMETYPE type)
++{
++	if(YSTRUE!=masterSwitch || YSTRUE!=oneTimeSwitch ||
++	   0>(int)type || FSSND_NUM_ONETIMETYPE<=(int)type)
++	{
++		return;
++	}
++	const YsWavFile *wav=&oneTimeWav[(int)type];
++	if(YSTRUE!=Playable(wav))
++	{
++		return;
++	}
++	// A free slot; if none, the one nearest its end makes room.
++	int slot=-1;
++	unsigned int bestLeft=0xffffffffu;
++	for(int i=0; i<MAX_ONESHOT; ++i)
++	{
++		if(NULL==oneShot[i].wav)
++		{
++			slot=i;
++			break;
++		}
++		const unsigned int left=oneShot[i].wav->NTimeStep()-oneShot[i].pos;
++		if(left<bestLeft)
++		{
++			bestLeft=left;
++			slot=i;
++		}
++	}
++	oneShot[slot].wav=wav;
++	oneShot[slot].pos=0;
+ }
+ 
+ void FsSoundKeepPlaying(void)
+ {
++	if(YSTRUE!=masterSwitch || YSTRUE!=loaded)
++	{
++		return;
++	}
++
++	const YsWavFile *env=EnvironWav();
++	if(YSTRUE!=Playable(env))
++	{
++		env=NULL;
++	}
++	if(env!=envVoice.wav)
++	{
++		// Another engine level: carry on at the same place in the loop, so
++		// the sound changes without a jump back to the start.
++		envVoice.pos=(NULL!=env ? envVoice.pos%env->NTimeStep() : 0);
++		envVoice.wav=env;
++	}
++
++	YSBOOL busy=(NULL!=envVoice.wav ? YSTRUE : YSFALSE);
++	for(int i=0; i<MAX_ONESHOT; ++i)
++	{
++		if(NULL!=oneShot[i].wav)
++		{
++			busy=YSTRUE;
++		}
++	}
++	if(YSTRUE!=busy && 0>dsp)
++	{
++		return;   // nothing to play: don't open the device for silence
++	}
++	if(YSTRUE!=OpenDsp())
++	{
++		return;
++	}
++
++	int queued=0;
++	audio_buf_info space;
++	if(0!=DSP_IOCTL(dsp,SNDCTL_DSP_GETODELAY,&queued) ||
++	   0!=DSP_IOCTL(dsp,SNDCTL_DSP_GETOSPACE,&space))
++	{
++		return;
++	}
++	int want=TARGET_BYTES-queued;
++	if(space.bytes<want)
++	{
++		want=space.bytes;
++	}
++	want&=~1;
++	if(want<MIN_WRITE_BYTES)
++	{
++		return;
++	}
++
++	const int n=want/2;
++	memset(mixAcc,0,sizeof(int)*n);
++	if(NULL!=envVoice.wav)
++	{
++		MixVoice(envVoice,mixAcc,n,YSTRUE);
++	}
++	for(int i=0; i<MAX_ONESHOT; ++i)
++	{
++		if(NULL!=oneShot[i].wav)
++		{
++			MixVoice(oneShot[i],mixAcc,n,YSFALSE);
++		}
++	}
++	for(int i=0; i<n; ++i)
++	{
++		const int v=mixAcc[i];
++		mixBuf[i]=(short)(v>32767 ? 32767 : (v<-32768 ? -32768 : v));
++	}
++
++	int done=0;
++	while(done<want)
++	{
++		const int w=(int)DSP_WRITE(dsp,(const char *)mixBuf+done,want-done);
++		if(0>=w)
++		{
++			break;     // EAGAIN (full) or an error: the rest is dropped
++		}
++		done+=w;
++	}
+ }
+ 
+ 
+@@ -73,7 +465,7 @@
+ {
+ }
+ 
+-void FsVoiceSpeak(int nVoicePhrase,const struct FsVoicePhrase voicePhrase[])
++void FsVoiceSpeak(int ,const struct FsVoicePhrase [])
+ {
+ }
+ 

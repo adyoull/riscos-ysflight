@@ -27,6 +27,7 @@ static int xeig=1,yeig=1,scrW=1920,scrH=1080;
 static unsigned char keys[128];             /* internal keys held */
 static int ptrX,ptrY,ptrButtons,ptrWindow=-1;
 static int wheel;
+static int ptrSetX,ptrSetY;                 /* last OS_Word 21,3 */
 static int nextHandle=100;
 static std::map<int,std::vector<int>> windows;   /* handle -> CreateWindow block */
 static std::map<int,int> visibleArea[4];
@@ -139,6 +140,12 @@ static const _kernel_oserror *Swi(int swi,int r[10])
 		}
 		return NULL;
 	case OS_Word:
+		if(21==r[0] && 3==((unsigned char *)r[1])[0])     /* set pointer position */
+		{
+			unsigned char *b=(unsigned char *)r[1];
+			ptrSetX=(short)(b[1]|(b[2]<<8));
+			ptrSetY=(short)(b[3]|(b[4]<<8));
+		}
 		return NULL;
 	case 0x43380:                           /* TaskWindow_TaskInfo */
 		r[0]=0;
@@ -176,6 +183,7 @@ static void Setup(void)
 /* -- Stub EGL and GL ----------------------------------------------------- */
 
 static int surfaceHandle,surfacesCreated,surfaceRenderW,surfaceRenderH,swaps,configAskedOpenGL;
+static int stubScale=1,scaleAskW,scaleAskH,surfaceScale,attribScale;   /* window scale */
 static int overlayChecks;
 
 extern "C" {
@@ -191,11 +199,12 @@ EGLBoolean eglChooseConfig(EGLDisplay,const EGLint *a,EGLConfig *c,EGLint,EGLint
 EGLContext eglCreateContext(EGLDisplay,EGLConfig,EGLContext,const EGLint *) { return (EGLContext)2; }
 EGLSurface eglCreateWindowSurface(EGLDisplay,EGLConfig,EGLNativeWindowType w,const EGLint *a)
 {
-	surfaceHandle=(int)(long)w; surfacesCreated++; surfaceRenderW=surfaceRenderH=0;
+	surfaceHandle=(int)(long)w; surfacesCreated++; surfaceRenderW=surfaceRenderH=0; surfaceScale=0;
 	for(int i=0; a && a[i]!=EGL_NONE; i+=2)
 	{
 		if(EGL_RENDER_WIDTH_RISCOS==a[i]) surfaceRenderW=a[i+1];
 		if(EGL_RENDER_HEIGHT_RISCOS==a[i]) surfaceRenderH=a[i+1];
+		if(EGL_WINDOW_SCALE_RISCOS==a[i]) surfaceScale=a[i+1];
 	}
 	return (EGLSurface)3;
 }
@@ -208,6 +217,12 @@ EGLBoolean eglSwapBuffers(EGLDisplay,EGLSurface) { swaps++; return EGL_TRUE; }
 EGLBoolean eglQuerySurface(EGLDisplay,EGLSurface,EGLint a,EGLint *v) { *v=0; (void)a; return EGL_TRUE; }
 EGLBoolean eglRedrawWindowRISCOS(EGLDisplay,int *) { return EGL_TRUE; }
 EGLBoolean eglCheckOverlaysRISCOS(EGLDisplay) { overlayChecks++; return EGL_TRUE; }
+EGLint eglWindowScaleRISCOS(EGLDisplay,EGLint w,EGLint h) { scaleAskW=w; scaleAskH=h; return stubScale; }
+EGLBoolean eglSurfaceAttrib(EGLDisplay,EGLSurface,EGLint a,EGLint v)
+{
+	if(EGL_WINDOW_SCALE_RISCOS==a) attribScale=v;
+	return EGL_TRUE;
+}
 
 void glClearColor(GLfloat,GLfloat,GLfloat,GLfloat) {}
 void glClear(GLbitfield) {}
@@ -483,6 +498,55 @@ int main(void)
 	FsPollDevice();
 	CHECK(1==FsCheckWindowExposure(),"mode change: exposure");
 	FsCloseWindow();
+
+	/* EX0 EY0 with the window scale (riscos-mesa 20.3.5-16): each program
+	   pixel shown 2x2; the program sees its own pixels everywhere. */
+	Setup();
+	xeig=yeig=0; scrW=3840; scrH=2160;
+	stubScale=2;
+	unsetenv("YSFlight$Render");
+	setenv("YSFlight$Size","800x600",1);
+	opt.x0=100; opt.y0=100;
+	FsOpenWindow(opt);
+	win=surfaceHandle;
+	Visible(win,v);
+	CHECK(800==scaleAskW && 600==scaleAskH,"window scale asked for the window's size");
+	CHECK(2==surfaceScale,"EGL_WINDOW_SCALE_RISCOS 2 given to the surface");
+	CHECK(v[2]-v[0]==1600 && v[3]-v[1]==1200,"scale 2: window twice the size in OS units");
+	CHECK(v[0]==200 && v[3]==2160-200,"scale 2: position in program pixels");
+	FsGetWindowSize(w,h);
+	CHECK(800==w && 600==h && 800==vpW && 600==vpH,"scale 2: program and viewport see 800x600");
+	FsGetWindowPosition(x0,y0);
+	CHECK(100==x0 && 100==y0,"scale 2: FsGetWindowPosition in program pixels");
+	ptrX=v[0]; ptrY=v[3]-1; ptrButtons=0; ptrWindow=win;  /* the last test's button released */
+	FsPollDevice();
+	while(FSMOUSEEVENT_NONE!=MouseEvent(x,y,lb,mb,rb)) {}
+	Push(12,{win,-1,0,0,0,0});
+	Push(6,{v[0]+400,v[3]-1-300,4,win,-1});
+	ptrX=v[0]+400; ptrY=v[3]-1-300; ptrButtons=4; ptrWindow=win;
+	FsPollDevice();
+	e=MouseEvent(x,y,lb,mb,rb);
+	CHECK(FSMOUSEEVENT_LBUTTONDOWN==e && 200==x && 150==y,"scale 2: mouse in program pixels");
+	FsSetMousePosition(200,150);
+	CHECK(ptrSetX==v[0]+400 && ptrSetY==v[3]-1-300,"scale 2: FsSetMousePosition");
+	FsMakeFullScreen();
+	win=surfaceHandle;
+	Visible(win,v);
+	CHECK(v[0]==0 && v[2]==3840 && v[1]==0 && v[3]==2160,"scale 2: full screen covers the screen");
+	FsGetWindowSize(w,h);
+	CHECK(1920==w && 1080==h,"scale 2: full screen is 1920x1080 program pixels");
+	CHECK(2==surfaceScale,"scale 2: the full screen surface too");
+	/* To a normal (EX1 EY1) mode: EGL now says 1, set at once */
+	xeig=yeig=1; scrW=1920; scrH=1080;
+	stubScale=1;
+	attribScale=0;
+	Push(17,{20,0,0,0,0x400C1});
+	FsPollDevice();
+	CHECK(1==attribScale,"mode change: new scale set with eglSurfaceAttrib");
+	FsGetWindowSize(w,h);
+	CHECK(1920==w && 1080==h,"mode change: full screen at scale 1");
+	FsCloseWindow();
+	stubScale=1;
 
 	return fake_done("fssimplewindow RISC OS back end");
 }

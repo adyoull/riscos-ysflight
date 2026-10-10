@@ -2,7 +2,7 @@
 
 YSCE `231e711` (2026-02-08) and ysce_public `1b13297` (2025-05-19), built with
 GCCSDK GCC 10 (riscos-crossdev 1.3), riscos-unixlib 5.0.3.3 and the
-riscos-mesa devkit 20.3.5-14.
+riscos-mesa devkit 20.3.5-16.
 
 ## Patches
 
@@ -32,6 +32,7 @@ riscos-mesa devkit 20.3.5-14.
 | ysce_public 08 riscos-timing | fslazywindow/src/linux_win/fslazywindow.cpp | time per loop (poll, simulation, draw, swap, sleep) in the log every 5 s | |
 | ysce_public 09 riscos-loop-cap | fslazywindow/src/linux_win/fslazywindow.cpp | at most 100 loop passes a second (a screen drawing nothing took all the CPU) | |
 | ysce_public 10 riscos-png-zlib | ysbitmap/src/yspng.cpp, yspng.h, CMakeLists.txt | PNGs inflated with zlib and unfiltered a row at a time (same bytes, about 5x faster; tests/png-decode) | maybe |
+| ysce_public 11 riscos-window-scale | fssimplewindow/src/riscos/fsriscoswrapper.cpp | EX0 EY0 desktops: riscos-mesa's window scale (each pixel shown 2x2), sizes and mouse in program pixels | |
 
 ## Build set-up
 
@@ -88,6 +89,10 @@ design. Taken from riscos-mesa's freeglut back end and the other ports:
 - **Full screen** = a borderless window the size of the screen (no mode
   change; the program stays a Wimp task). Message_ModeChange reopens it.
 - **Sizes:** pixels for the program, OS units for the Wimp (EX0 EY0 modes).
+  On EX0 EY0 desktops riscos-mesa's window scale (20.3.5-16) shows each
+  program pixel as 2x2 screen pixels (ysce_public 11): program pixels =
+  screen pixels / scale everywhere; the scale is chosen again on a mode
+  change and set with eglSurfaceAttrib.
   `YSFlight$Size` sets the window size, `YSFlight$Render` the size drawn at
   (EGL_RENDER_*_RISCOS: stretched to the window; the program sees that size
   and the mouse is scaled to it). Overlays (`EGL$Overlay on`) are checked

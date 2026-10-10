@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased: riscos2 test 1 (2026-10-10)
+
+- **High resolution (EX0 EY0, "180 dpi") desktops** (ysce_public 11): the
+  window was half size there, and full screen drew four times the pixels.
+  With riscos-mesa 20.3.5-16's window scale each pixel is shown 2x2, so the
+  window is the size it is in a normal mode and costs the same to draw.
+  `*Set EGL$WindowScale 1` keeps the old pixel-for-pixel window.
+- **riscos-mesa 20.3.5-16** (20.3.5-15's faster depth-tested drawing:
+  NEON depth test, a direct route for depth-tested rows, no texturing of
+  hidden pixels, NEON vertex fog). For an A/B on the Pi against riscos1
+  (20.3.5-14).
+
 ## riscos1 (2026-10-07): first release
 
 YSFlight Community Edition (YSCE `231e711`, ysce_public `1b13297`) for

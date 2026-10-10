@@ -1,0 +1,245 @@
+RISC OS: the window scale on high resolution (EX0 EY0) desktops.
+
+On an EX0 EY0 ("180 dpi") desktop one OS unit is one pixel, so the game's
+window came out half as wide and high as in a normal mode (and full screen
+drew four times the pixels). riscos-mesa 20.3.5-16 has a window scale:
+each of the program's pixels is shown as scale x scale screen pixels.
+- After eglInitialize, scale = eglWindowScaleRISCOS(dpy, w, h) for the
+  window's size: 2 in an EX0 EY0 mode when a window twice the size fits,
+  else 1 (EGL$WindowScale 1-4 overrides it).
+- The window opens (w * scale) << eig OS units; the surface gets
+  EGL_WINDOW_SCALE_RISCOS = scale, so it still renders w x h.
+- Every size and position the program sees (window size and position,
+  mouse, FsSetMousePosition, maximise, full screen) is in its own pixels:
+  screen pixels / scale.
+- Message_ModeChange: the scale is worked out again for the window's size
+  and set at once with eglSurfaceAttrib.
+YSFlight$Render (a fixed drawing size) still takes precedence in EGL.
+Host test: tests/host-window (scale 2 checks).
+
+--- a/src/fssimplewindow/src/riscos/fsriscoswrapper.cpp
++++ b/src/fssimplewindow/src/riscos/fsriscoswrapper.cpp
+@@ -25,7 +25,12 @@
+    - Full screen is a borderless window the size of the screen: the program
+      stays a Wimp task and the screen mode is never changed.
+    - Window sizes are in pixels; the Wimp works in OS units (pixels << eig),
+-     so EX0 EY0 (180 dpi) modes work. YSFlight$Render (e.g. 640x480) draws
++     so EX0 EY0 (180 dpi) modes work. There, riscos-mesa's window scale
++     (eglWindowScaleRISCOS, EGL_WINDOW_SCALE_RISCOS) shows each of the
++     program's pixels as 2x2 screen pixels, so the window is the size it is
++     in a normal mode and costs no more to draw; every size and position
++     the program sees is in its own pixels (screen pixels / winScale).
++     YSFlight$Render (e.g. 640x480) draws
+      at a fixed size and stretches it to the window (EGL_RENDER_*_RISCOS):
+      the program then sees that size, and mouse positions are scaled to it.
+    - Message_Quit exits. Message_PreQuit (desktop shutdown) is objected to
+@@ -78,6 +83,7 @@
+ static int normalPos[4];                    /* x0,y0,w,h (pixels) to go back to */
+ static int renderW,renderH;                 /* YSFlight$Render, 0 = window size */
+ static int lastW,lastH;                     /* size last reported to the program */
++static int winScale=1;                      /* screen pixels per program pixel (1-4) */
+ 
+ static EGLDisplay eglDpy=EGL_NO_DISPLAY;
+ static EGLConfig eglCfg;
+@@ -154,6 +160,32 @@
+ 	return 0xFF==(_kernel_osbyte(121,internal^0x80,0)&0xFF);
+ }
+ 
++/* The screen in the program's pixels */
++static int LogicalW(void)
++{
++	return screenW/winScale;
++}
++
++static int LogicalH(void)
++{
++	return screenH/winScale;
++}
++
++/* Screen pixels (e.g. the title bar's height) in the program's pixels, rounded up */
++static int ToLogical(int screenPixels)
++{
++	return (screenPixels+winScale-1)/winScale;
++}
++
++/* The window scale EGL suggests for a window of w x h program pixels */
++static int ChooseScale(int w,int h)
++{
++	int s=(int)eglWindowScaleRISCOS(eglDpy,w,h);
++	if(s<1) s=1;
++	if(s>4) s=4;
++	return s;
++}
++
+ static int InTaskWindow(void)
+ {
+ 	_kernel_swi_regs r;
+@@ -196,8 +228,8 @@
+ /* Program pixels from the visible area */
+ static void WindowPixels(int &w,int &h)
+ {
+-	w=(visible[2]-visible[0])>>xEig;
+-	h=(visible[3]-visible[1])>>yEig;
++	w=((visible[2]-visible[0])>>xEig)/winScale;
++	h=((visible[3]-visible[1])>>yEig)/winScale;
+ 	if(w<1) w=1;
+ 	if(h<1) h=1;
+ }
+@@ -221,8 +253,8 @@
+ 	int ww,wh,pw,ph;
+ 	WindowPixels(ww,wh);
+ 	ProgramSize(pw,ph);
+-	x=(sx-visible[0])>>xEig;
+-	y=(visible[3]-1-sy)>>yEig;
++	x=((sx-visible[0])>>xEig)/winScale;
++	y=((visible[3]-1-sy)>>yEig)/winScale;
+ 	if(pw!=ww)
+ 	{
+ 		x=x*pw/ww;
+@@ -309,8 +341,8 @@
+ 	return r.r[0];
+ }
+ 
+-/* Open the window with its visible area at x,y (pixels from the screen's
+-   top left), w x h pixels; behind -1 = on top. */
++/* Open the window with its visible area at x,y (program pixels from the
++   screen's top left), w x h program pixels; behind -1 = on top. */
+ static void OpenWimpWindow(int x,int y,int w,int h,int behind)
+ {
+ 	int block[8];
+@@ -320,10 +352,10 @@
+ 	if(w<1) w=1;
+ 	if(h<1) h=1;
+ 	block[0]=wimpWindow;
+-	block[1]=x<<xEig;
+-	block[4]=sh-(y<<yEig);
+-	block[3]=block[1]+(w<<xEig);
+-	block[2]=block[4]-(h<<yEig);
++	block[1]=(x*winScale)<<xEig;
++	block[4]=sh-((y*winScale)<<yEig);
++	block[3]=block[1]+((w*winScale)<<xEig);
++	block[2]=block[4]-((h*winScale)<<yEig);
+ 	block[5]=0;
+ 	block[6]=0;
+ 	block[7]=behind;
+@@ -351,6 +383,8 @@
+ 		attr[n++]=EGL_RENDER_HEIGHT_RISCOS;
+ 		attr[n++]=renderH;
+ 	}
++	attr[n++]=EGL_WINDOW_SCALE_RISCOS;
++	attr[n++]=winScale;
+ 	attr[n]=EGL_NONE;
+ 	eglSurf=eglCreateWindowSurface(eglDpy,eglCfg,(EGLNativeWindowType)wimpWindow,attr);
+ 	if(EGL_NO_SURFACE==eglSurf)
+@@ -517,15 +551,6 @@
+ 	{
+ 		renderW=renderH=0;
+ 	}
+-	if(wid>screenW) wid=screenW;
+-	if(hei>screenH) hei=screenH;
+-	if(x0<0 || x0+wid>screenW) x0=(screenW-wid)/2;
+-	if(y0<0 || y0+hei>screenH) y0=(screenH-hei)/2;
+-	if(y0<(48>>yEig)) y0=48>>yEig;         /* keep the title bar on the screen */
+-	normalPos[0]=x0;
+-	normalPos[1]=y0;
+-	normalPos[2]=wid;
+-	normalPos[3]=hei;
+ 
+ 	if(NULL!=fsOpenGLContextCreationCallBack)
+ 	{
+@@ -534,6 +559,19 @@
+ 
+ 	InitEGL(opt.useDoubleBuffer);
+ 
++	/* 2 in an EX0 EY0 mode if the window fits twice the size, else 1
++	   (or EGL$WindowScale): sizes from here on are in program pixels. */
++	winScale=ChooseScale(wid,hei);
++	if(wid>LogicalW()) wid=LogicalW();
++	if(hei>LogicalH()) hei=LogicalH();
++	if(x0<0 || x0+wid>LogicalW()) x0=(LogicalW()-wid)/2;
++	if(y0<0 || y0+hei>LogicalH()) y0=(LogicalH()-hei)/2;
++	if(y0<ToLogical(48>>yEig)) y0=ToLogical(48>>yEig);    /* keep the title bar on the screen */
++	normalPos[0]=x0;
++	normalPos[1]=y0;
++	normalPos[2]=wid;
++	normalPos[3]=hei;
++
+ 	wimpWindow=CreateWimpWindow(0);
+ 	if(0==wimpWindow)
+ 	{
+@@ -660,15 +698,15 @@
+ void FsMaximizeWindow(void)
+ {
+ 	/* As big as the screen with the title bar and the icon bar showing */
+-	int top=48>>yEig,bottom=(132>>yEig);
++	int top=ToLogical(48>>yEig),bottom=ToLogical(132>>yEig);
+ 	if(0!=fullScreen)
+ 	{
+ 		fullScreen=0;
+-		ReplaceWimpWindow(0,0,top,screenW,screenH-top-bottom);
++		ReplaceWimpWindow(0,0,top,LogicalW(),LogicalH()-top-bottom);
+ 	}
+ 	else if(0!=wimpWindow)
+ 	{
+-		OpenWimpWindow(0,top,screenW,screenH-top-bottom,-1);
++		OpenWimpWindow(0,top,LogicalW(),LogicalH()-top-bottom,-1);
+ 		CheckResize();
+ 	}
+ }
+@@ -694,7 +732,7 @@
+ 		FsGetWindowPosition(normalPos[0],normalPos[1]);
+ 		WindowPixels(normalPos[2],normalPos[3]);
+ 		fullScreen=1;
+-		ReplaceWimpWindow(1,0,0,screenW,screenH);
++		ReplaceWimpWindow(1,0,0,LogicalW(),LogicalH());
+ 	}
+ }
+ 
+@@ -705,8 +743,8 @@
+ 
+ void FsGetWindowPosition(int &x0,int &y0)
+ {
+-	x0=visible[0]>>xEig;
+-	y0=((screenH<<yEig)-visible[3])>>yEig;
++	x0=(visible[0]>>xEig)/winScale;
++	y0=(((screenH<<yEig)-visible[3])>>yEig)/winScale;
+ }
+ 
+ void FsSetWindowTitle(const char windowTitle[])
+@@ -867,10 +905,24 @@
+ 
+ static void ModeChanged(void)
+ {
++	/* The window's size in program pixels in the old mode (the visible
++	   area hasn't been read again yet): the new scale keeps it about the
++	   same size on the screen, and it takes effect at once. */
++	int ow,oh,s;
++	WindowPixels(ow,oh);
+ 	ReadScreen();
++	s=ChooseScale(ow,oh);
++	if(s!=winScale)
++	{
++		winScale=s;
++		if(EGL_NO_SURFACE!=eglSurf)
++		{
++			eglSurfaceAttrib(eglDpy,eglSurf,EGL_WINDOW_SCALE_RISCOS,s);
++		}
++	}
+ 	if(0!=fullScreen && 0!=wimpWindow)
+ 	{
+-		OpenWimpWindow(0,0,screenW,screenH,-1);
++		OpenWimpWindow(0,0,LogicalW(),LogicalH(),-1);
+ 	}
+ 	else
+ 	{
+@@ -1212,8 +1264,8 @@
+ 	int ww,wh,pw,ph;
+ 	WindowPixels(ww,wh);
+ 	ProgramSize(pw,ph);
+-	int x=visible[0]+((mx*ww/pw)<<xEig);
+-	int y=visible[3]-1-((my*wh/ph)<<yEig);
++	int x=visible[0]+(((mx*ww/pw)*winScale)<<xEig);
++	int y=visible[3]-1-(((my*wh/ph)*winScale)<<yEig);
+ 	b[0]=3;                                 /* OS_Word 21,3: set pointer position */
+ 	b[1]=x&255;
+ 	b[2]=(x>>8)&255;

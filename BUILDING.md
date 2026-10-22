@@ -17,12 +17,12 @@ Needs a Linux x86-64 host with git, cmake, make, python3 with Pillow
    the toolchain's `libunixlib.a` isn't the one pinned in `build/env.sh`
    (`UNIXLIB_SHA256`). `patches/unixlib/unixlib-riscos.diff` is 5.0.3.3's
    change set.
-2. **riscos-mesa devkit 20.3.5-16** (`riscos-mesa-devkit-20.3.5-16.tgz`,
-   sha256 069de412…; OSMesa, EGL, GLU; `bin/mkrozip.py`).
+2. **riscos-mesa devkit 20.3.5-17** (`riscos-mesa-devkit-20.3.5-17.tgz`,
+   sha256 e0bea16a…; OSMesa, EGL, GLU; `bin/mkrozip.py`).
 
 ```
 export RISCOS_TOOLCHAIN=/path/to/riscos-crossdev-toolchain-1.3-unixlib-5.0.3.3
-export RISCOS_DEVKIT=/path/to/riscos-mesa-devkit-20.3.5-16
+export RISCOS_DEVKIT=/path/to/riscos-mesa-devkit-20.3.5-17
 build/build.sh
 build/package.sh m1-2
 ```

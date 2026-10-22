@@ -29,6 +29,9 @@ switches it off.
 Keys and mouse: as YSFlight on other systems. Select = left button,
 Menu = middle, Adjust = right. Click in the window to give it the
 keyboard.
+In full screen the pointer stops just above the bottom of the screen,
+so the icon bar doesn't pop up over the game (*Set
+YSFlight$PointerMargin 0 to turn that off).
 
 Joysticks: USB joysticks and gamepads work through Richard Walker's
 USBJoystick module (0.23 or later gives every axis, the hat and all

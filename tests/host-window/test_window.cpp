@@ -28,6 +28,7 @@ static unsigned char keys[128];             /* internal keys held */
 static int ptrX,ptrY,ptrButtons,ptrWindow=-1;
 static int wheel;
 static int ptrSetX,ptrSetY;                 /* last OS_Word 21,3 */
+static int boxBottom,boxRight,boxTop,boxSets;   /* last OS_Word 21,1 (mouse bounding box) */
 static int nextHandle=100;
 static std::map<int,std::vector<int>> windows;   /* handle -> CreateWindow block */
 static std::map<int,int> visibleArea[4];
@@ -145,6 +146,15 @@ static const _kernel_oserror *Swi(int swi,int r[10])
 			unsigned char *b=(unsigned char *)r[1];
 			ptrSetX=(short)(b[1]|(b[2]<<8));
 			ptrSetY=(short)(b[3]|(b[4]<<8));
+		}
+		if(21==r[0] && 1==((unsigned char *)r[1])[0])     /* mouse bounding box */
+		{
+			unsigned char *b=(unsigned char *)r[1];
+			CHECK(0==(b[1]|(b[2]<<8)),"mouse box: left 0");
+			boxBottom=(short)(b[3]|(b[4]<<8));
+			boxRight=(short)(b[5]|(b[6]<<8));
+			boxTop=(short)(b[7]|(b[8]<<8));
+			boxSets++;
 		}
 		return NULL;
 	case 0x43380:                           /* TaskWindow_TaskInfo */
@@ -443,8 +453,47 @@ int main(void)
 	CHECK(1920==w && 1080==h,"full screen size in pixels");
 	CHECK(caretWindow==fsw,"full screen window has the focus");
 	win=fsw;
+	/* Pointer over the full screen window: its box stops 2 pixels above
+	   the bottom (icon bar), and that lowest row is the bottom row */
+	int savedButtons=ptrButtons;
+	boxSets=0;
+	ptrX=200; ptrY=4; ptrButtons=0; ptrWindow=fsw;
+	FsPollDevice();
+	CHECK(1==boxSets && 4==boxBottom && 3839==boxRight && 2159==boxTop,"full screen: pointer box bottom raised 2 pixels");
+	{
+		int lb2,mb2,rb2,mx2,my2;
+		FsGetMouseState(lb2,mb2,rb2,mx2,my2);
+		CHECK(100==mx2 && 1079==my2,"full screen: the lowest reachable row is the bottom row");
+	}
+	FsPollDevice();
+	CHECK(1==boxSets,"pointer box set once, not every poll");
+	ptrWindow=-1;
+	FsPollDevice();
+	CHECK(2==boxSets && 0==boxBottom,"pointer off the window: the whole screen again");
+	ptrWindow=fsw;
+	FsPollDevice();
+	CHECK(3==boxSets && 4==boxBottom,"back over it: raised again");
+	/* A mode change resets the box in the OS: set again for the new screen */
+	scrW=1600; scrH=900;
+	Push(17,{20,0,0,0,0x400C1});
+	FsPollDevice();
+	CHECK(4==boxSets && 4==boxBottom && 3199==boxRight && 1799==boxTop,"mode change: pointer box set again for the new screen");
+	scrW=1920; scrH=1080;
+	Push(17,{20,0,0,0,0x400C1});
+	FsPollDevice();
+	CHECK(5==boxSets && 3839==boxRight,"mode change back: set again");
+	while(1==FsCheckWindowExposure()) {}
+	ptrButtons=savedButtons;
+	boxSets=0;
 	FsUnmaximizeWindow();
 	win=surfaceHandle;
+	ptrWindow=win;
+	FsPollDevice();
+	CHECK(1==boxSets && 0==boxBottom,"normal window: the whole screen");
+	{
+		int lb2,mb2,rb2,mx2,my2;
+		while(FSMOUSEEVENT_NONE!=FsGetMouseEvent(lb2,mb2,rb2,mx2,my2)) {}   /* the moves above */
+	}
 	Visible(win,v);
 	CHECK(0==memcmp(v,before,sizeof(v)),"back to the same window position and size");
 	CHECK((unsigned)lastCreatedFlags==0xAF000002u,"back to a normal window");
@@ -545,7 +594,14 @@ int main(void)
 	CHECK(1==attribScale,"mode change: new scale set with eglSurfaceAttrib");
 	FsGetWindowSize(w,h);
 	CHECK(1920==w && 1080==h,"mode change: full screen at scale 1");
+	/* After a mode change the OS has reset the pointer's box: raised again
+	   for the new screen, and freed when the window closes */
+	boxSets=0;
+	ptrX=200; ptrY=4; ptrButtons=0; ptrWindow=win;
+	FsPollDevice();
+	CHECK(1==boxSets && 4==boxBottom && 3839==boxRight,"mode change: pointer box raised for the new screen");
 	FsCloseWindow();
+	CHECK(2==boxSets && 0==boxBottom,"close: pointer box back to the whole screen");
 	stubScale=1;
 
 	return fake_done("fssimplewindow RISC OS back end");

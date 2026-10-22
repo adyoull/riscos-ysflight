@@ -1,0 +1,137 @@
+RISC OS: keep the icon bar from popping up over full screen.
+
+With the icon bar's "bring to front automatically" option, it came forward
+over the full screen game whenever the pointer reached the bottom of the
+screen. As riscos-mesa 20.3.5-17's SDL and freeglut back ends do: while the
+pointer is over the full screen window, the mouse's bounding box
+(OS_Word 21,1) stops a few pixels above the bottom, and the lowest row the
+pointer can reach counts as the bottom row, so the game still sees the
+pointer reach the bottom edge. The whole screen comes back when the pointer
+is over anything else, out of full screen, when the window closes and at
+exit; after a mode change (the OS resets the box) it's set again.
+YSFlight$PointerMargin sets the margin in screen pixels (default 2, 0 = off).
+Host test: tests/host-window.
+
+--- a/src/fssimplewindow/src/riscos/fsriscoswrapper.cpp
++++ b/src/fssimplewindow/src/riscos/fsriscoswrapper.cpp
+@@ -33,6 +33,13 @@
+      YSFlight$Render (e.g. 640x480) draws
+      at a fixed size and stretches it to the window (EGL_RENDER_*_RISCOS):
+      the program then sees that size, and mouse positions are scaled to it.
++   - Full screen: while the pointer is over the window the mouse's bounding
++     box stops a few pixels above the screen's bottom, so the icon bar
++     ("bring to front automatically") doesn't pop up over the game; the
++     lowest row the pointer reaches counts as the bottom row. As
++     riscos-mesa's SDL and freeglut back ends do (20.3.5-17).
++     YSFlight$PointerMargin sets the margin in screen pixels (default 2,
++     0 = off).
+    - Message_Quit exits. Message_PreQuit (desktop shutdown) is objected to
+      and treated as the close icon; if the program then closes within 30
+      seconds the shutdown is restarted (Ctrl-Shift-F12 via Wimp_ProcessKey).
+@@ -84,6 +91,8 @@
+ static int renderW,renderH;                 /* YSFlight$Render, 0 = window size */
+ static int lastW,lastH;                     /* size last reported to the program */
+ static int winScale=1;                      /* screen pixels per program pixel (1-4) */
++static int boxRaised;                       /* OS units the pointer's box bottom is raised by */
++static int boxMargin=-1;                    /* YSFlight$PointerMargin, -1 = not read yet */
+ 
+ static EGLDisplay eglDpy=EGL_NO_DISPLAY;
+ static EGLConfig eglCfg;
+@@ -247,10 +256,65 @@
+ 	}
+ }
+ 
++/* The mouse's bounding box: the whole screen, with the bottom raised by
++   'bottom' OS units (OS_Word 21,1). */
++static void WriteMouseBox(int bottom)
++{
++	int right=(screenW<<xEig)-1,top=(screenH<<yEig)-1;
++	unsigned char b[9];
++	b[0]=1;
++	b[1]=0; b[2]=0;
++	b[3]=bottom&255; b[4]=(bottom>>8)&255;
++	b[5]=right&255;  b[6]=(right>>8)&255;
++	b[7]=top&255;    b[8]=(top>>8)&255;
++	_kernel_osword(21,(int *)b);
++}
++
++static void RestoreMouseBox(void)
++{
++	if(0!=boxRaised)
++	{
++		WriteMouseBox(0);
++		boxRaised=0;
++	}
++}
++
++/* Over the full screen window: keep the pointer off the screen's bottom
++   row, or the icon bar comes forward over the game. */
++static void KeepPointerOffBottom(int keep)
++{
++	int raise=0;
++	if(0!=keep)
++	{
++		if(boxMargin<0)
++		{
++			const char *v=getenv("YSFlight$PointerMargin");
++			boxMargin=2;
++			if(NULL!=v && '0'<=*v && *v<='9')
++			{
++				boxMargin=atoi(v);
++				if(64<boxMargin) boxMargin=64;
++			}
++		}
++		raise=boxMargin<<yEig;
++	}
++	if(raise!=boxRaised)
++	{
++		WriteMouseBox(raise);
++		boxRaised=raise;
++	}
++}
++
+ /* Screen position (OS units) to the program's pixel coordinates */
+ static void ScreenToProgram(int sx,int sy,int &x,int &y)
+ {
+ 	int ww,wh,pw,ph;
++	/* the lowest row the pointer reaches while its box is raised is the
++	   screen's bottom row */
++	if(0!=boxRaised && sy<boxRaised+(1<<yEig))
++	{
++		sy=0;
++	}
+ 	WindowPixels(ww,wh);
+ 	ProgramSize(pw,ph);
+ 	x=((sx-visible[0])>>xEig)/winScale;
+@@ -451,6 +515,7 @@
+ 
+ static void AtExit(void)
+ {
++	RestoreMouseBox();                      /* never leave the desktop's pointer boxed in */
+ 	if(EGL_NO_DISPLAY!=eglDpy)
+ 	{
+ 		DestroySurface();
+@@ -670,6 +735,7 @@
+ 
+ void FsCloseWindow(void)
+ {
++	RestoreMouseBox();
+ 	if(EGL_NO_DISPLAY!=eglDpy)
+ 	{
+ 		DestroySurface();
+@@ -911,6 +977,7 @@
+ 	int ow,oh,s;
+ 	WindowPixels(ow,oh);
+ 	ReadScreen();
++	boxRaised=0;                            /* the OS reset the pointer's box to the new screen */
+ 	s=ChooseScale(ow,oh);
+ 	if(s!=winScale)
+ 	{
+@@ -1056,6 +1123,7 @@
+ 	{
+ 		return;
+ 	}
++	KeepPointerOffBottom(0!=fullScreen && block[3]==wimpWindow);
+ 	int over=(block[0]>=visible[0] && block[0]<visible[2] &&
+ 	          block[1]>=visible[1] && block[1]<visible[3]);
+ 	int held=lastLb|lastMb|lastRb;

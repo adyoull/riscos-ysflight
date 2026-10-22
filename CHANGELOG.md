@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased: riscos2 test 2 (2026-10-22)
+
+- **Full screen: the icon bar no longer pops up over the game** when the
+  pointer reaches the bottom of the screen (with the icon bar's "bring to
+  front automatically" option). While the pointer is over the full screen
+  game it stops 2 pixels above the bottom, and that row counts as the
+  bottom row (ysce_public 12). `*Set YSFlight$PointerMargin 0` turns it
+  off. As riscos-mesa 20.3.5-17 does for SDL and freeglut programs.
+- **riscos-mesa 20.3.5-17** (drawing the same as 20.3.5-16).
+
 ## Unreleased: riscos2 test 1 (2026-10-10)
 
 - **High resolution (EX0 EY0, "180 dpi") desktops** (ysce_public 11): the

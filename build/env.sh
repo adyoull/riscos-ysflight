@@ -2,7 +2,7 @@
 # Settings for the riscos-ysflight build scripts. Each can be set first.
 #   RISCOS_TOOLCHAIN  riscos-crossdev toolchain 1.3 with UnixLib 5.0.3.3's
 #                     libunixlib.a copied in (BUILDING.md)
-#   RISCOS_DEVKIT     riscos-mesa devkit (20.3.5-16)
+#   RISCOS_DEVKIT     riscos-mesa devkit (20.3.5-17)
 #   UNIXLIB_SHA256    the libunixlib.a the build must link (5.0.3.3 release);
 #                     =any skips the check
 #   WORK              where the upstream clones and the build go (./work)

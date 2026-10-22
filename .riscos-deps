@@ -1,0 +1,5 @@
+# NAME TAG: the releases (github.com/adyoull) this port is built with.
+# The riscos-crossdev line chooses the build image; riscos-mesa the devkit
+# (build/fetch-devkit.sh, checked against build/SHA256SUMS).
+riscos-crossdev v1.8.2
+riscos-mesa v20.3.5-17

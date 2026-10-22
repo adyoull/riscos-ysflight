@@ -2,6 +2,14 @@
 
 ## Unreleased: riscos2 test 2 (2026-10-22)
 
+- **Builds on GitHub** in the riscos-crossdev 1.8.2 image, with a pull
+  request when riscos-crossdev or riscos-mesa makes a new release
+  (`.riscos-deps`, `.github/workflows/`, `ci/riscos-deps-hook.sh`,
+  `build/ci.sh`). The toolchain is riscos-crossdev's (1.4's, with UnixLib
+  5.0.3.3: no more hand-copied libunixlib.a); the riscos-mesa devkit is
+  downloaded from its release and checked (`build/fetch-devkit.sh`,
+  `build/SHA256SUMS`).
+
 - **Full screen: the icon bar no longer pops up over the game** when the
   pointer reaches the bottom of the screen (with the icon bar's "bring to
   front automatically" option). While the pointer is over the full screen

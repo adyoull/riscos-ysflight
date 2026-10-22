@@ -6,12 +6,13 @@
 # Re-running is safe: applied patches are skipped and make carries on.
 set -euo pipefail
 . "$(dirname "$0")/env.sh"
-# The UnixLib that gets linked: the release named in env.sh, not whatever the
-# toolchain happens to carry.
+# UnixLib 5.0.3.3 or later (riscos-crossdev 1.4 or later): its
+# __pthread_held_wait isn't in 5.0.3.2 or earlier.
 UL="$RISCOS_TOOLCHAIN/arm-riscos-gnueabihf/lib/libunixlib.a"
-if [ "$UNIXLIB_SHA256" != any ] && [ "$(sha256sum < "$UL" | cut -d' ' -f1)" != "$UNIXLIB_SHA256" ]; then
-  echo "$UL is not the UnixLib release in build/env.sh (see BUILDING.md)" >&2; exit 1
+if ! arm-riscos-gnueabihf-nm "$UL" 2>/dev/null | grep " T __pthread_held_wait$" >/dev/null; then
+  echo "$UL is older than UnixLib 5.0.3.3: use riscos-crossdev 1.4 or later (BUILDING.md)" >&2; exit 1
 fi
+"$RYS_DIR/build/fetch-devkit.sh"
 mkdir -p "$WORK"; cd "$WORK"
 [ -d YSCE ] || git clone -q https://github.com/YSCEDC/YSCE.git
 [ -d ysce_public ] || git clone -q https://github.com/YSCEDC/ysce_public.git

@@ -1,7 +1,7 @@
 # Porting notes
 
 YSCE `231e711` (2026-02-08) and ysce_public `1b13297` (2025-05-19), built with
-GCCSDK GCC 10 (riscos-crossdev 1.3), riscos-unixlib 5.0.3.3 and the
+GCCSDK GCC 10 (riscos-crossdev 1.4 toolchain, 1.8.2 image), riscos-unixlib 5.0.3.3 and the
 riscos-mesa devkit 20.3.5-17.
 
 ## Patches

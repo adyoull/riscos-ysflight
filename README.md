@@ -40,7 +40,8 @@ console server tests in a task window.
 |---|---|
 | `patches/ysce/`, `patches/ysce_public/` | One patch per change, applied in `series` order to YSCE `231e711` and ysce_public `1b13297` |
 | `patches/unixlib/unixlib-riscos.diff` | The riscos-unixlib 5.0.3.3 change set (the UnixLib linked into the programs) |
-| `build/` | `env.sh`, `build.sh`, `package.sh`, the CMake toolchain files |
+| `build/` | `env.sh`, `build.sh`, `package.sh`, `fetch-devkit.sh` (+ `SHA256SUMS`), `ci.sh`, the CMake toolchain files |
+| `.riscos-deps`, `.github/workflows/`, `ci/` | GitHub builds and dependency pull requests (riscos-crossdev's CI; BUILDING.md) |
 | `app/!YSFlight/` | `!Run`, `!Help`, `Tests`, PThreadTicker |
 | `tools/check-stack-probes.py` | Finds big stack frames without probes |
 | `tests/` | Host tests: window code (riscos-crossdev's fake RISC OS), joystick, sound, PNG decoding |

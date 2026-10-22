@@ -3,29 +3,29 @@
 Needs a Linux x86-64 host with git, cmake, make, python3 with Pillow
 (`python3-pil`, used by package.sh to shrink the menu pictures) and:
 
-1. **riscos-crossdev toolchain 1.3** (`riscos-crossdev-toolchain-1.3-x86_64-linux.tar.xz`,
-   sha256 bcdb35fb…). It links statically by default and its `elf2aif` has
-   the fix for big images. It carries riscos-unixlib 5.0.3.2; until a
-   riscos-crossdev release packages 5.0.3.3, copy **riscos-unixlib 5.0.3.3**'s
-   release `libunixlib.a` (sha256 e24f16c3…) over the toolchain's (in a copy
-   of the toolchain):
-   ```
-   cp -a riscos-crossdev-toolchain-1.3-x86_64-linux riscos-crossdev-toolchain-1.3-unixlib-5.0.3.3
-   cp libunixlib.a riscos-crossdev-toolchain-1.3-unixlib-5.0.3.3/arm-riscos-gnueabihf/lib/libunixlib.a
-   ```
-   5.0.3.3's public headers are the same as 5.0.3.2's. `build.sh` stops if
-   the toolchain's `libunixlib.a` isn't the one pinned in `build/env.sh`
-   (`UNIXLIB_SHA256`). `patches/unixlib/unixlib-riscos.diff` is 5.0.3.3's
-   change set.
-2. **riscos-mesa devkit 20.3.5-17** (`riscos-mesa-devkit-20.3.5-17.tgz`,
-   sha256 e0bea16a…; OSMesa, EGL, GLU; `bin/mkrozip.py`).
+1. **riscos-crossdev 1.4 or later's toolchain**
+   (`riscos-crossdev-toolchain-1.4-x86_64-linux.tar.xz`, sha256 17e83377…;
+   riscos-crossdev 1.8.x uses the same one). It has riscos-unixlib 5.0.3.3
+   built in, links statically by default, and its `elf2aif` has the fix for
+   big images. `build.sh` stops if the toolchain's UnixLib is older than
+   5.0.3.3. `patches/unixlib/unixlib-riscos.diff` is 5.0.3.3's change set.
+   (From a toolchain tarball older than riscos-crossdev 1.8.2, run its
+   `toolchain/relocate.sh` once after unpacking.)
+2. **The riscos-mesa devkit `.riscos-deps` names** (now 20.3.5-17; OSMesa,
+   EGL, GLU; `bin/mkrozip.py`). `build/fetch-devkit.sh` (run by `build.sh`)
+   downloads it from riscos-mesa's GitHub release into `work/` and checks it
+   against `build/SHA256SUMS`, unless `RISCOS_DEVKIT` already points at that
+   version (its `VERSION` file).
 
 ```
-export RISCOS_TOOLCHAIN=/path/to/riscos-crossdev-toolchain-1.3-unixlib-5.0.3.3
-export RISCOS_DEVKIT=/path/to/riscos-mesa-devkit-20.3.5-17
+export RISCOS_TOOLCHAIN=/path/to/riscos-crossdev-toolchain-1.4-x86_64-linux
 build/build.sh
-build/package.sh m1-2
+build/package.sh test
 ```
+
+Or everything GitHub runs (build, riscos-crossdev's `checks/check-all.sh`
+on both programs, package, the Linux tests), with `RCD_DIR` set to a
+riscos-crossdev 1.8.2 checkout: `build/ci.sh [VERSION]`.
 
 `build.sh` clones YSCE and ysce_public into `work/` (or `$WORK`), checks out
 the pinned commits (`YSCE_REF`, `PUBLIC_REF` in `build/env.sh`; `=HEAD` to use
@@ -42,6 +42,25 @@ builds `ysflight32_gl2`, and `build/package-gl2.sh VERSION` makes
 `dist/YSFlight-gl2-<version>.zip` (RunImageGL2 and an Obey file RunGL2) to
 unzip over an !YSFlight of the same version.
 
+## Building on GitHub
+
+`.github/workflows/` has riscos-crossdev 1.8.2's two workflows (its
+`docs/CI.md`), run in the image `ghcr.io/adyoull/riscos-crossdev:<version>`
+that the `riscos-crossdev` line of `.riscos-deps` chooses:
+
+- `riscos-build.yml`: on every push and pull request, `build/ci.sh`; the
+  zip (`dist/YSFlight-ci.zip`) is kept on the run's page.
+- `riscos-deps-update.yml`: every day, if riscos-crossdev or riscos-mesa
+  has a newer release than `.riscos-deps` names, moves the pin (and, for
+  riscos-mesa, the devkit's line in `build/SHA256SUMS`, through
+  `ci/riscos-deps-hook.sh`), builds with it and opens a pull request saying
+  whether that passed. Nothing is merged or released by itself.
+- `PACKAGES` (Ubuntu packages the image hasn't): `python3-pil` (package.sh),
+  `g++-13-multilib` (the -m32 window and joystick tests), `zlib1g-dev` and
+  `imagemagick` (the PNG test).
+- On GitHub: Settings > Actions > General, "Workflow permissions: Read and
+  write" and "Allow GitHub Actions to create and approve pull requests".
+
 ## Checks
 
 - `tests/host-joystick/run.sh` (WORK as for the build; g++-multilib): the
@@ -55,11 +74,10 @@ unzip over an !YSFlight of the same version.
   back end (ysce patch 14) against a fake `/dev/dsp` with a playback clock,
   using the game's WAV files.
 
-- `tools/check-stack-probes.py ELF`: must report 0 unprobed frames.
-- riscos-crossdev `checks/check-fpu.sh ELF`: no VFPv4 instructions.
-- UnixLib's ticker block: 640 bytes (5.0.3.1 to 5.0.3.3; riscos-crossdev
-  1.3's `check-unixlib.sh` expects 640).
-- riscos-crossdev `checks/check-static.sh ELF`: statically linked.
+- riscos-crossdev's `checks/check-all.sh ELF` (unstripped; `build/ci.sh`
+  runs it on both programs): statically linked, every frame over 4 KB
+  probed, no VFPv4 instructions, UnixLib's ticker block 640 bytes.
+- `tools/check-stack-probes.py ELF`: the same probe check on its own.
 
 ## Window code test on Linux
 

@@ -1,10 +1,11 @@
 # Source this: . build/env.sh
 # Settings for the riscos-ysflight build scripts. Each can be set first.
-#   RISCOS_TOOLCHAIN  riscos-crossdev toolchain 1.3 with UnixLib 5.0.3.3's
-#                     libunixlib.a copied in (BUILDING.md)
-#   RISCOS_DEVKIT     riscos-mesa devkit (20.3.5-17)
-#   UNIXLIB_SHA256    the libunixlib.a the build must link (5.0.3.3 release);
-#                     =any skips the check
+#   RISCOS_TOOLCHAIN  riscos-crossdev's toolchain (1.4 or later: UnixLib
+#                     5.0.3.3). Set in the riscos-crossdev image.
+#   RISCOS_DEVKIT     the riscos-mesa devkit named in .riscos-deps. One set
+#                     already (the image's) is used if its VERSION matches;
+#                     otherwise $WORK/riscos-mesa-devkit-<version>, which
+#                     build/fetch-devkit.sh downloads.
 #   WORK              where the upstream clones and the build go (./work)
 #   YSCE_REF / PUBLIC_REF  upstream commits; =HEAD uses whatever is checked out
 RYS_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -12,10 +13,15 @@ RYS_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 : "${YSCE_REF:=231e711}"
 : "${PUBLIC_REF:=1b13297}"
 : "${JOBS:=$(nproc)}"
-: "${UNIXLIB_SHA256:=e24f16c3f4612aae3871ceff521ab86b0d3ac4cc689d734e0e4085d02c774adf}"
 : "${RISCOS_TOOLCHAIN:?set RISCOS_TOOLCHAIN to the riscos-crossdev toolchain}"
-: "${RISCOS_DEVKIT:?set RISCOS_DEVKIT to the riscos-mesa devkit}"
-export RYS_DIR WORK YSCE_REF PUBLIC_REF JOBS RISCOS_TOOLCHAIN RISCOS_DEVKIT UNIXLIB_SHA256
+MESA_TAG=$(awk '$1 == "riscos-mesa" {print $2}' "$RYS_DIR/.riscos-deps")
+MESA_VERSION=${MESA_TAG#v}
+[ -n "$MESA_VERSION" ] || { echo ".riscos-deps has no riscos-mesa line" >&2; return 1 2>/dev/null || exit 1; }
+if [ -z "${RISCOS_DEVKIT:-}" ] ||
+   [ "$(cat "$RISCOS_DEVKIT/VERSION" 2>/dev/null)" != "riscos-mesa devkit $MESA_VERSION" ]; then
+  RISCOS_DEVKIT=$WORK/riscos-mesa-devkit-$MESA_VERSION
+fi
+export RYS_DIR WORK YSCE_REF PUBLIC_REF JOBS RISCOS_TOOLCHAIN RISCOS_DEVKIT MESA_VERSION
 export PATH="$RISCOS_TOOLCHAIN/bin:$PATH"
 
 # use_ref DIR REF: check out REF in a clean clone. A clone with changes is

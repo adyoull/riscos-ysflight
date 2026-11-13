@@ -6,6 +6,11 @@
 #                     already (the image's) is used if its VERSION matches;
 #                     otherwise $WORK/riscos-mesa-devkit-<version>, which
 #                     build/fetch-devkit.sh downloads.
+#   RISCOS_DEVKIT_ANY =1: use $RISCOS_DEVKIT as it is, whatever its version
+#                     (a test devkit, such as one with shared libraries)
+#   MIXED             =1: the game as a mixed program (riscos-crossdev 1.11 or
+#                     later): OpenGL, EGL and GLU from !MesaLibs (the
+#                     devkit's lib/shared) instead of linked in
 #   WORK              where the upstream clones and the build go (./work)
 #   YSCE_REF / PUBLIC_REF  upstream commits; =HEAD uses whatever is checked out
 RYS_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -13,15 +18,19 @@ RYS_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 : "${YSCE_REF:=231e711}"
 : "${PUBLIC_REF:=1b13297}"
 : "${JOBS:=$(nproc)}"
+: "${RISCOS_DEVKIT_ANY:=}"
+: "${MIXED:=}"
 : "${RISCOS_TOOLCHAIN:?set RISCOS_TOOLCHAIN to the riscos-crossdev toolchain}"
 MESA_TAG=$(awk '$1 == "riscos-mesa" {print $2}' "$RYS_DIR/.riscos-deps")
 MESA_VERSION=${MESA_TAG#v}
 [ -n "$MESA_VERSION" ] || { echo ".riscos-deps has no riscos-mesa line" >&2; return 1 2>/dev/null || exit 1; }
-if [ -z "${RISCOS_DEVKIT:-}" ] ||
+if [ -n "${RISCOS_DEVKIT_ANY:-}" ] && [ -d "${RISCOS_DEVKIT:-}/include" ]; then
+  :
+elif [ -z "${RISCOS_DEVKIT:-}" ] ||
    [ "$(cat "$RISCOS_DEVKIT/VERSION" 2>/dev/null)" != "riscos-mesa devkit $MESA_VERSION" ]; then
   RISCOS_DEVKIT=$WORK/riscos-mesa-devkit-$MESA_VERSION
 fi
-export RYS_DIR WORK YSCE_REF PUBLIC_REF JOBS RISCOS_TOOLCHAIN RISCOS_DEVKIT MESA_VERSION
+export RYS_DIR WORK YSCE_REF PUBLIC_REF JOBS RISCOS_TOOLCHAIN RISCOS_DEVKIT RISCOS_DEVKIT_ANY MIXED MESA_VERSION
 export PATH="$RISCOS_TOOLCHAIN/bin:$PATH"
 
 # use_ref DIR REF: check out REF in a clean clone. A clone with changes is
@@ -40,15 +49,22 @@ use_ref() {
 }
 
 # apply_series DIR PATCHDIR: apply the patches named in PATCHDIR/series, in
-# order, skipping any that are already applied.
+# order, skipping any that are already applied. Applied patches are listed
+# in DIR/.rys-applied (a reverse check alone fails for a patch that a later
+# one changed the same lines after); a tree without the list falls back to
+# the reverse check.
 apply_series() {
-  local dir=$1 pdir=$2 p
+  local dir=$1 pdir=$2 p list
+  list="$dir/.rys-applied-$(basename "$pdir")"
   while read -r p; do
     [ -n "$p" ] || continue
-    if git -C "$dir" apply --reverse --check "$pdir/$p" 2>/dev/null; then
+    if grep -qxF "$p" "$list" 2>/dev/null; then
       echo "  already applied: $p"
+    elif [ ! -f "$list" ] && git -C "$dir" apply --reverse --check "$pdir/$p" 2>/dev/null; then
+      echo "  already applied: $p"; echo "$p" >> "$list.tmp"
     else
-      git -C "$dir" apply "$pdir/$p"; echo "  applied: $p"
+      git -C "$dir" apply "$pdir/$p"; echo "  applied: $p"; echo "$p" >> "$list.tmp"
     fi
   done < "$pdir/series"
+  if [ -f "$list.tmp" ]; then cat "$list.tmp" >> "$list"; rm -f "$list.tmp"; fi
 }

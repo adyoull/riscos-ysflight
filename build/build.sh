@@ -3,6 +3,8 @@
 # patch series and build for RISC OS:
 #   $WORK/build/main_consvr/ysflight32_nownd   console server
 #   $WORK/build/main/ysflight32_gl1            the game (window back end: M2)
+# MIXED=1: the game is a mixed program (OpenGL, EGL and GLU from !MesaLibs);
+# the console server stays static. Needs a devkit with lib/shared.
 # Re-running is safe: applied patches are skipped and make carries on.
 set -euo pipefail
 . "$(dirname "$0")/env.sh"
@@ -22,13 +24,32 @@ echo "ysce_public:"; apply_series ysce_public "$RYS_DIR/patches/ysce_public"
 # -ffile-prefix-map: no build paths (__FILE__ in asserts) in shipped programs.
 MAP="-ffile-prefix-map=$WORK/YSCE=YSCE -ffile-prefix-map=$WORK/ysce_public=ysce_public"
 mkdir -p build; cd build
-cmake ../YSCE/src -DCMAKE_TOOLCHAIN_FILE="$RYS_DIR/build/toolchain-riscos.cmake" \
-  -DRISCOS_TOOLCHAIN="$RISCOS_TOOLCHAIN" -DRISCOS_DEVKIT="$RISCOS_DEVKIT" \
-  -DCMAKE_BUILD_TYPE=Release -DRISCOS_EXTRA_FLAGS="$MAP" >/dev/null
+# Programs link statically; MIXED=1 then links the game again as a mixed
+# program (-rdynamic, the devkit's lib/shared first). The link flags are
+# given each time, so a later build without MIXED makes it static again.
+configure() {
+  cmake ../YSCE/src -DCMAKE_TOOLCHAIN_FILE="$RYS_DIR/build/toolchain-riscos.cmake" \
+    -DRISCOS_TOOLCHAIN="$RISCOS_TOOLCHAIN" -DRISCOS_DEVKIT="$RISCOS_DEVKIT" \
+    -DCMAKE_BUILD_TYPE=Release -DRISCOS_EXTRA_FLAGS="$MAP" \
+    -DCMAKE_EXE_LINKER_FLAGS="$1" >/dev/null
+}
+configure "-static -L$RISCOS_DEVKIT/lib"
 # GL2=1 also builds the OpenGL 2 (GLSL) game, for comparison (package-gl2.sh).
-TARGETS="ysflight32_nownd ysflight32_gl1"; FILES="main_consvr/ysflight32_nownd main/ysflight32_gl1"
-if [ -n "${GL2:-}" ]; then TARGETS="$TARGETS ysflight32_gl2"; FILES="$FILES main/ysflight32_gl2"; fi
-make -j"$JOBS" $TARGETS
+GAMES="ysflight32_gl1"; FILES="main_consvr/ysflight32_nownd main/ysflight32_gl1"
+if [ -n "${GL2:-}" ]; then GAMES="$GAMES ysflight32_gl2"; FILES="$FILES main/ysflight32_gl2"; fi
+if [ -n "$MIXED" ]; then
+  STUBS=$(arm-riscos-gnueabihf-gcc -print-file-name=mixed-stubs)
+  [ -d "$STUBS" ] || { echo "MIXED needs riscos-crossdev 1.11 or later (no mixed-stubs)" >&2; exit 1; }
+  [ -f "$RISCOS_DEVKIT/lib/shared/libEGL.so" ] ||
+    { echo "MIXED needs a devkit with shared libraries ($RISCOS_DEVKIT/lib/shared)" >&2; exit 1; }
+  make -j"$JOBS" ysflight32_nownd
+  configure "-rdynamic -Wl,-rpath-link=$STUBS -L$RISCOS_DEVKIT/lib/shared -L$RISCOS_DEVKIT/lib"
+  rm -f main/ysflight32_gl1 main/ysflight32_gl2     # link again with the new flags
+  make -j"$JOBS" $GAMES
+else
+  rm -f main/ysflight32_gl1 main/ysflight32_gl2     # in case the last build was mixed
+  make -j"$JOBS" ysflight32_nownd $GAMES
+fi
 for f in $FILES; do
   python3 "$RYS_DIR/tools/check-stack-probes.py" "$f"
 done

@@ -2,8 +2,9 @@
 ===================
 
 YSFlight Community Edition, a free flight simulator, for RISC OS.
-The game runs in a desktop window, drawn with software OpenGL
-(riscos-mesa). Not done yet: the desktop's fonts (the text uses
+The game runs in a desktop window, drawn with OpenGL through
+riscos-mesa: with the GPU where RISC3D has a driver for it, else in
+software. Not done yet: the desktop's fonts (the text uses
 YSFlight's own bitmap font, Latin-1 only), the online server list and
 the air traffic control voice (YSFlight has none on other systems
 either).
@@ -11,6 +12,12 @@ either).
 Needs: RISC OS 5 on an ARMv7 machine with VFP (Raspberry Pi 2, 3, 4,
 400), SharedUnixLibrary 1.16 or later and ARMEABISupport (PackMan).
 PThreadTicker 0.03 is included and loaded by !Run.
+
+The mixed build (the program is called YSFlight, not !RunImage) loads
+OpenGL from !MesaLibs, so it also needs !SharedLibs with ld-riscos/so/2
+(GCCSDK 8 or later, as in Iris) and !MesaLibs, both in
+!Boot.Resources. After installing a new !MesaLibs, restart the computer
+before running it, or the libraries loaded before stay in use.
 
 Double-click !YSFlight to start. Messages, and a report if it crashes,
 go to the file YSFlightLog in the scrap directory
@@ -41,7 +48,7 @@ buttons. Choose which axis and button does what in Option >
 Joystick/Key Assignments, and calibrate in Option > Calibrate
 Joystick; the calibration is kept in <Choices$Write>.YSFlight.joycalib.
 
-Speed: software OpenGL draws every pixel with the processor, so a
+Speed: in software, OpenGL draws every pixel with the processor, so a
 smaller window, or a smaller picture stretched to the window, is
 faster. See the YSFlight$Size and YSFlight$Render lines in !Run.
 The two costliest options are off in a new RISC OS configuration:

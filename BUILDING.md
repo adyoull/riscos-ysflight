@@ -42,6 +42,23 @@ builds `ysflight32_gl2`, and `build/package-gl2.sh VERSION` makes
 `dist/YSFlight-gl2-<version>.zip` (RunImageGL2 and an Obey file RunGL2) to
 unzip over an !YSFlight of the same version.
 
+## The mixed build
+
+`MIXED=1` links the game as a mixed program (riscos-crossdev's
+`docs/MIXED.md`, riscos-mesa's `docs/porting/mixed.md`): OpenGL, EGL and
+GLU come from the devkit's `lib/shared` at run time (!MesaLibs), while
+UnixLib and libstdc++ stay linked in. It needs a riscos-crossdev 1.11 or
+later toolchain (`mixed-stubs`) and a devkit with `lib/shared` (riscos-mesa
+20.3.5-19 or later; for a test devkit, add `RISCOS_DEVKIT_ANY=1`):
+
+```
+MIXED=1 RISCOS_DEVKIT_ANY=1 RISCOS_DEVKIT=/path/to/devkit build/ci.sh test-mixed
+```
+
+The console server is still static. `package.sh` keeps the game as an ELF
+file (`!YSFlight.YSFlight,e1f`, stripped) and gives `!Run` the lines that
+boot !SharedLibs and !MesaLibs, set `YSFlight$LD$Env` and the WimpSlot.
+
 ## Building on GitHub
 
 `.github/workflows/` has riscos-crossdev 1.8.2's two workflows (its

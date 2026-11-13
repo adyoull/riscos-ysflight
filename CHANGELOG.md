@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased: riscos2 test 3 (2026-11-13)
+
+- **A mixed build** (`MIXED=1`, riscos-crossdev 1.11 or later): the game
+  loads OpenGL, EGL and GLU from riscos-mesa's !MesaLibs through
+  !SharedLibs instead of having them linked in; the console server stays
+  static. The program is an ELF file, `!YSFlight.YSFlight`, and `!Run`
+  boots and checks !SharedLibs and !MesaLibs. `build/ci.sh` also runs
+  riscos-crossdev's `check-mixed-package.sh` on it.
+- Built against riscos-mesa's RISC3D test devkit (branch `risc3d` at
+  `433ab73`, RISC3D client 0.8): EGL and OSMesa draw with the GPU through
+  RISC3D where it has a hardware driver, else in software as before.
+- `RISCOS_DEVKIT_ANY=1` builds with a devkit that isn't the pinned release.
+
 ## Unreleased: riscos2 test 2 (2026-10-22)
 
 - **Builds on GitHub** in the riscos-crossdev 1.8.2 image, with a pull

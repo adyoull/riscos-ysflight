@@ -5,6 +5,10 @@
 # its own devkit; build/env.sh uses that one when the versions match.)
 set -euo pipefail
 . "$(dirname "$0")/env.sh"
+if [ -n "$RISCOS_DEVKIT_ANY" ] && [ -d "$RISCOS_DEVKIT/include" ]; then
+  echo "devkit: $RISCOS_DEVKIT ($(cat "$RISCOS_DEVKIT/VERSION" 2>/dev/null), RISCOS_DEVKIT_ANY)"
+  exit 0
+fi
 if [ "$(cat "$RISCOS_DEVKIT/VERSION" 2>/dev/null)" = "riscos-mesa devkit $MESA_VERSION" ]; then
   exit 0
 fi

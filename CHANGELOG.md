@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased: riscos2 test 4 (2026-11-16)
+
+- **The GPU in the mixed build:** linked against riscos-mesa's
+  20.3.5-20gpu1 test devkit with `-lMesaGPU` after `-lOSMesa`, so the game
+  loads `libMesaGPU.so.1` from !MesaLibs and EGL draws on the GPU where
+  RISC3D has registered one (V3DRender on a Pi 4); without one it draws in
+  software as before. `MESA_GPU=0` leaves it out.
+
 ## Unreleased: riscos2 test 3 (2026-11-13)
 
 - **A mixed build** (`MIXED=1`, riscos-crossdev 1.11 or later): the game

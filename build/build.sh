@@ -27,11 +27,13 @@ mkdir -p build; cd build
 # Programs link statically; MIXED=1 then links the game again as a mixed
 # program (-rdynamic, the devkit's lib/shared first). The link flags are
 # given each time, so a later build without MIXED makes it static again.
+# configure LDFLAGS [EXTRA_LIBS]: EXTRA_LIBS go at the end of every link line.
 configure() {
   cmake ../YSCE/src -DCMAKE_TOOLCHAIN_FILE="$RYS_DIR/build/toolchain-riscos.cmake" \
     -DRISCOS_TOOLCHAIN="$RISCOS_TOOLCHAIN" -DRISCOS_DEVKIT="$RISCOS_DEVKIT" \
     -DCMAKE_BUILD_TYPE=Release -DRISCOS_EXTRA_FLAGS="$MAP" \
-    -DCMAKE_EXE_LINKER_FLAGS="$1" >/dev/null
+    -DCMAKE_EXE_LINKER_FLAGS="$1" \
+    -DCMAKE_C_STANDARD_LIBRARIES="${2:-}" -DCMAKE_CXX_STANDARD_LIBRARIES="${2:-}" >/dev/null
 }
 configure "-static -L$RISCOS_DEVKIT/lib"
 # GL2=1 also builds the OpenGL 2 (GLSL) game, for comparison (package-gl2.sh).
@@ -43,7 +45,15 @@ if [ -n "$MIXED" ]; then
   [ -f "$RISCOS_DEVKIT/lib/shared/libEGL.so" ] ||
     { echo "MIXED needs a devkit with shared libraries ($RISCOS_DEVKIT/lib/shared)" >&2; exit 1; }
   make -j"$JOBS" ysflight32_nownd
-  configure "-rdynamic -Wl,-rpath-link=$STUBS -L$RISCOS_DEVKIT/lib/shared -L$RISCOS_DEVKIT/lib"
+  # The GPU: with riscos-mesa 20.3.5-20 or later, -lMesaGPU (after OSMesa)
+  # makes the program load libMesaGPU.so.1, so EGL and OSMesa draw on the
+  # GPU where RISC3D has registered one (V3DRender on a Pi 4); without a
+  # GPU it draws in software as before. MESA_GPU=0 leaves it out.
+  GPULIB=
+  if [ "${MESA_GPU:-1}" != 0 ] && [ -f "$RISCOS_DEVKIT/lib/shared/libMesaGPU.so" ]; then
+    GPULIB=-lMesaGPU
+  fi
+  configure "-rdynamic -Wl,-rpath-link=$STUBS -L$RISCOS_DEVKIT/lib/shared -L$RISCOS_DEVKIT/lib" "$GPULIB"
   rm -f main/ysflight32_gl1 main/ysflight32_gl2     # link again with the new flags
   make -j"$JOBS" $GAMES
 else

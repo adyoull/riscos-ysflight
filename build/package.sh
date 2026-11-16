@@ -42,8 +42,9 @@ Run <YSFlight$Dir>.!RunImage %*0
 """
 new = """| This is the mixed build: the program (YSFlight, an ELF file) loads
 | OpenGL, EGL and GLU from !MesaLibs, through !SharedLibs. Both go in
-| !Boot.Resources. EGL draws with the GPU through RISC3D where there's a
-| driver for it, else in software (riscos-mesa decides).
+| !Boot.Resources. With a GPU registered with RISC3D (!RISC3D in
+| !Boot.Resources; V3DRender on a Pi 4) it draws on the GPU through
+| !MesaLibs' libMesaGPU, else in software (riscos-mesa decides).
 If "<SharedLibs$Dir>" = "" Then IfThere Boot:Resources.!SharedLibs.!Boot Then Run Boot:Resources.!SharedLibs.!Boot
 If "<MesaLibs$Dir>" = "" Then IfThere Boot:Resources.!MesaLibs.!Boot Then Run Boot:Resources.!MesaLibs.!Boot
 Unset YSFlight$SO2

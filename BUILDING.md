@@ -55,6 +55,12 @@ later toolchain (`mixed-stubs`) and a devkit with `lib/shared` (riscos-mesa
 MIXED=1 RISCOS_DEVKIT_ANY=1 RISCOS_DEVKIT=/path/to/devkit build/ci.sh test-mixed
 ```
 
+With a devkit that has `lib/shared/libMesaGPU.so` (riscos-mesa 20.3.5-20
+or later), the game is also linked with `-lMesaGPU` after the other
+libraries, so it loads `libMesaGPU.so.1` and EGL draws on the GPU where
+RISC3D has registered one; without a GPU it draws in software as before.
+`MESA_GPU=0` leaves it out.
+
 The console server is still static. `package.sh` keeps the game as an ELF
 file (`!YSFlight.YSFlight,e1f`, stripped) and gives `!Run` the lines that
 boot !SharedLibs and !MesaLibs, set `YSFlight$LD$Env` and the WimpSlot.

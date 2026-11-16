@@ -1,8 +1,8 @@
 # Porting notes
 
 YSCE `231e711` (2026-02-08) and ysce_public `1b13297` (2025-05-19), built with
-GCCSDK GCC 10 (riscos-crossdev 1.4 toolchain, 1.8.2 image), riscos-unixlib 5.0.3.3 and the
-riscos-mesa devkit 20.3.5-17.
+GCCSDK GCC 10 (riscos-crossdev 1.11 toolchain, 1.11.2 image), riscos-unixlib 5.0.3.7 and the
+riscos-mesa devkit 20.3.5-19 (static) and 20.3.5-20gpu4 (mixed, with the GPU library).
 
 ## Patches
 
@@ -56,7 +56,7 @@ riscos-mesa devkit 20.3.5-17.
 
 ## UnixLib
 
-- Linked with riscos-unixlib 5.0.3.3 (`patches/unixlib/unixlib-riscos.diff`
+- Linked with riscos-unixlib 5.0.3.7 (`patches/unixlib/unixlib-riscos.diff`
   is its change set). Heap in dynamic areas past 128 MB; ticker block 640 bytes.
 - Threads run as upstream (the owner's call, 2026-10-01): riscos-unixlib
   5.0.3.1 keeps switching threads through Wimp_Poll, so the simulation's
@@ -119,7 +119,7 @@ design. Taken from riscos-mesa's freeglut back end and the other ports:
 - Upstream's Linux sound is a plug-in loaded with dlopen that plays through
   ALSA. UnixLib has no dlopen and RISC OS no ALSA, so ysce 14 does the
   plug-in's job in `platform/riscos/fsairsoundriscos.cpp`, through
-  UnixLib's OSS `/dev/dsp` (riscos-unixlib 5.0.3.3, which plays it through
+  UnixLib's OSS `/dev/dsp` (riscos-unixlib 5.0.3.7, which plays it through
   SharedSoundBuffer, else DigitalRenderer; `!Run` loads the SSB modules if
   they're installed).
 - The 37 WAVs (8-bit 8 kHz to 16-bit 22050 Hz, mono) are converted once at

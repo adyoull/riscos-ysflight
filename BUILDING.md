@@ -3,29 +3,29 @@
 Needs a Linux x86-64 host with git, cmake, make, python3 with Pillow
 (`python3-pil`, used by package.sh to shrink the menu pictures) and:
 
-1. **riscos-crossdev 1.4 or later's toolchain**
-   (`riscos-crossdev-toolchain-1.4-x86_64-linux.tar.xz`, sha256 17e83377…;
-   riscos-crossdev 1.8.x uses the same one). It has riscos-unixlib 5.0.3.3
-   built in, links statically by default, and its `elf2aif` has the fix for
-   big images. `build.sh` stops if the toolchain's UnixLib is older than
-   5.0.3.3. `patches/unixlib/unixlib-riscos.diff` is 5.0.3.3's change set.
-   (From a toolchain tarball older than riscos-crossdev 1.8.2, run its
-   `toolchain/relocate.sh` once after unpacking.)
-2. **The riscos-mesa devkit `.riscos-deps` names** (now 20.3.5-17; OSMesa,
+1. **riscos-crossdev 1.11 or later's toolchain**
+   (`riscos-crossdev-toolchain-1.11-x86_64-linux.tar.xz`, sha256 2998d87e…,
+   from riscos-crossdev's v1.11 release; 1.11.2 uses the same one). It has
+   riscos-unixlib 5.0.3.7 built in, links statically by default, makes
+   mixed programs (`mixed-stubs`), and its `elf2aif` has the fix for big
+   images. `build.sh` stops if the toolchain's UnixLib is older than
+   5.0.3.3. (Run riscos-crossdev's `toolchain/relocate.sh` once after
+   unpacking a toolchain tarball.)
+2. **The riscos-mesa devkit `.riscos-deps` names** (now 20.3.5-19; OSMesa,
    EGL, GLU; `bin/mkrozip.py`). `build/fetch-devkit.sh` (run by `build.sh`)
    downloads it from riscos-mesa's GitHub release into `work/` and checks it
    against `build/SHA256SUMS`, unless `RISCOS_DEVKIT` already points at that
    version (its `VERSION` file).
 
 ```
-export RISCOS_TOOLCHAIN=/path/to/riscos-crossdev-toolchain-1.4-x86_64-linux
+export RISCOS_TOOLCHAIN=/path/to/riscos-crossdev-toolchain-1.11-x86_64-linux
 build/build.sh
 build/package.sh test
 ```
 
 Or everything GitHub runs (build, riscos-crossdev's `checks/check-all.sh`
 on both programs, package, the Linux tests), with `RCD_DIR` set to a
-riscos-crossdev 1.8.2 checkout: `build/ci.sh [VERSION]`.
+riscos-crossdev 1.11.2 checkout: `build/ci.sh [VERSION]`.
 
 `build.sh` clones YSCE and ysce_public into `work/` (or `$WORK`), checks out
 the pinned commits (`YSCE_REF`, `PUBLIC_REF` in `build/env.sh`; `=HEAD` to use
@@ -69,7 +69,8 @@ boot !SharedLibs and !MesaLibs, set `YSFlight$LD$Env` and the WimpSlot.
 
 ## Building on GitHub
 
-`.github/workflows/` has riscos-crossdev 1.8.2's two workflows (its
+`.github/workflows/` has riscos-crossdev 1.8.2's two workflows (building the
+static and the mixed game) (its
 `docs/CI.md`), run in the image `ghcr.io/adyoull/riscos-crossdev:<version>`
 that the `riscos-crossdev` line of `.riscos-deps` chooses:
 

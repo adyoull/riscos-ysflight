@@ -1,5 +1,21 @@
 # Changelog
 
+## riscos2 (2026-11-16): mixed build, RISC3D
+
+Everything in the riscos2 tests below, with:
+
+- **Two builds:**
+  - **Mixed** (`YSFlight-riscos2-mixed.zip`): OpenGL, EGL, GLU and the GPU
+    library from !MesaLibs through !SharedLibs, linked against riscos-mesa's
+    20.3.5-20gpu4 devkit with `-lMesaGPU`. With !RISC3D installed, RISC3D
+    works out how to draw on the graphics hardware; otherwise software.
+    The matching !MesaLibs is a download of this release.
+  - **Static** (`YSFlight-riscos2.zip`): riscos-mesa 20.3.5-19 linked in;
+    software, or RISC3D on RISC OS on Linux.
+- riscos-crossdev 1.11.2 (UnixLib 5.0.3.7); PThreadTicker 0.04.
+- GitHub builds both (`.riscos-deps`: riscos-crossdev v1.11.2, riscos-mesa
+  v20.3.5-19; the GPU library comes with a riscos-mesa release that has it).
+
 ## Unreleased: riscos2 test 4 (2026-11-16)
 
 - **The GPU in the mixed build:** linked against riscos-mesa's

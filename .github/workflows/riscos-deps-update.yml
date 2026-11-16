@@ -36,7 +36,7 @@ permissions:
   pull-requests: write
 
 env:
-  BUILD: build/ci.sh             # the same as in riscos-build.yml
+  BUILD: build/ci.sh ci && MIXED=1 build/ci.sh ci-mixed   # static and mixed builds, checks, Linux tests
   PACKAGES: "python3-pil g++-13-multilib zlib1g-dev imagemagick"
 
 jobs:

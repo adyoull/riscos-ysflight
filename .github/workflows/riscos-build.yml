@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
 
 env:
-  BUILD: build/ci.sh             # build, checks (check-all) and the Linux tests
+  BUILD: build/ci.sh ci && MIXED=1 build/ci.sh ci-mixed   # static and mixed builds, checks, Linux tests
   ARTIFACTS: dist/*.zip          # YSFlight-ci.zip
   PACKAGES: "python3-pil g++-13-multilib zlib1g-dev imagemagick"
 

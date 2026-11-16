@@ -3,8 +3,9 @@
 
 YSFlight Community Edition, a free flight simulator, for RISC OS.
 The game runs in a desktop window, drawn with OpenGL through
-riscos-mesa: in the mixed build with the GPU where RISC3D has one
-(!RISC3D in !Boot.Resources; V3DRender on a Pi 4), else in software. Not done yet: the desktop's fonts (the text uses
+riscos-mesa. The mixed build uses the graphics hardware when !RISC3D
+is installed in !Boot.Resources (RISC3D works out how), else it draws
+in software. Not done yet: the desktop's fonts (the text uses
 YSFlight's own bitmap font, Latin-1 only), the online server list and
 the air traffic control voice (YSFlight has none on other systems
 either).

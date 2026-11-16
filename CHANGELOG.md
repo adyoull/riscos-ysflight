@@ -4,9 +4,10 @@
 
 - **The GPU in the mixed build:** linked against riscos-mesa's
   20.3.5-20gpu1 test devkit with `-lMesaGPU` after `-lOSMesa`, so the game
-  loads `libMesaGPU.so.1` from !MesaLibs and EGL draws on the GPU where
-  RISC3D has registered one (V3DRender on a Pi 4); without one it draws in
-  software as before. `MESA_GPU=0` leaves it out.
+  loads `libMesaGPU.so.1` from !MesaLibs. With !RISC3D installed, RISC3D
+  works out how to draw on the machine's graphics hardware; without it the
+  game draws in software as before. `!Run` loads RISC3D if !RISC3D has
+  been seen and it isn't loaded. `MESA_GPU=0` leaves the library out.
 
 ## Unreleased: riscos2 test 3 (2026-11-13)
 

@@ -57,8 +57,10 @@ MIXED=1 RISCOS_DEVKIT_ANY=1 RISCOS_DEVKIT=/path/to/devkit build/ci.sh test-mixed
 
 With a devkit that has `lib/shared/libMesaGPU.so` (riscos-mesa 20.3.5-20
 or later), the game is also linked with `-lMesaGPU` after the other
-libraries, so it loads `libMesaGPU.so.1` and EGL draws on the GPU where
-RISC3D has registered one; without a GPU it draws in software as before.
+libraries, so it loads `libMesaGPU.so.1`. Users only install !MesaLibs and
+!RISC3D: RISC3D works out how to draw on the machine's hardware (`!Run`
+loads it if !RISC3D has been seen and it isn't loaded yet); without
+!RISC3D the game draws in software as before.
 `MESA_GPU=0` leaves it out.
 
 The console server is still static. `package.sh` keeps the game as an ELF

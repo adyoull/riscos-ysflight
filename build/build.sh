@@ -46,9 +46,9 @@ if [ -n "$MIXED" ]; then
     { echo "MIXED needs a devkit with shared libraries ($RISCOS_DEVKIT/lib/shared)" >&2; exit 1; }
   make -j"$JOBS" ysflight32_nownd
   # The GPU: with riscos-mesa 20.3.5-20 or later, -lMesaGPU (after OSMesa)
-  # makes the program load libMesaGPU.so.1, so EGL and OSMesa draw on the
-  # GPU where RISC3D has registered one (V3DRender on a Pi 4); without a
-  # GPU it draws in software as before. MESA_GPU=0 leaves it out.
+  # makes the program load libMesaGPU.so.1 from !MesaLibs. RISC3D (from
+  # !RISC3D) works out how to use the machine's graphics hardware; without
+  # it the program draws in software as before. MESA_GPU=0 leaves it out.
   GPULIB=
   if [ "${MESA_GPU:-1}" != 0 ] && [ -f "$RISCOS_DEVKIT/lib/shared/libMesaGPU.so" ]; then
     GPULIB=-lMesaGPU

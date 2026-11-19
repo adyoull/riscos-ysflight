@@ -2,4 +2,4 @@
 # The riscos-crossdev line chooses the build image; riscos-mesa the devkit
 # (build/fetch-devkit.sh, checked against build/SHA256SUMS).
 riscos-crossdev v1.11.2
-riscos-mesa v20.3.5-19
+riscos-mesa v20.3.5-22
